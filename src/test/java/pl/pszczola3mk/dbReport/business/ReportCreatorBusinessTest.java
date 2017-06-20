@@ -27,8 +27,8 @@ public class ReportCreatorBusinessTest {
 	@Test
 	public void checkConnectionTest() {
 		log.info("ReportCreatorBusinessTest checkConnectionTest - start");
-		this.business.checkConnection();
-		verify(service, times(1)).checkConnection();
+		this.business.checkConnection("test", "user","pass");
+		verify(service, times(1)).checkConnection("test", "user","pass");
 		log.info("ReportCreatorBusinessTest checkConnectionTest - stop");
 	}
 }

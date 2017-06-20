@@ -38,8 +38,8 @@ public class ConnectionCheckControllerTest {
 	@Test
 	public void checkConnectionTest() {
 		log.info("ReportCreatorBusinessTest checkConnectionTest - start");
-		String body = this.restTemplate.getForObject("/api/checkConnectionDB", String.class);
-		verify(business, times(1)).checkConnection();
+		String body = this.restTemplate.getForObject("/api/checkConnectionDB?url=test&userName=pszczola&password=psz", String.class);
+		verify(business, times(1)).checkConnection("test","pszczola","psz");
 		assertThat(body).isEqualTo("DB Success");
 		log.info("ReportCreatorBusinessTest checkConnectionTest - stop");
 	}

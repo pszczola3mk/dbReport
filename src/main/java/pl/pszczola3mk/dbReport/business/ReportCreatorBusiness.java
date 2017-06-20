@@ -7,12 +7,10 @@ import pl.pszczola3mk.dbReport.service.ReportCreatorDBService;
 @Component
 public class ReportCreatorBusiness {
 
-
-
 	@Autowired
 	private ReportCreatorDBService service;
 
-	public void checkConnection() {
-		this.service.checkConnection();
+	public void checkConnection(String url, String userName, String password) {
+		this.service.checkConnection( url,  userName, password);
 	}
 }

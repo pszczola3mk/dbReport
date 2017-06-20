@@ -17,8 +17,8 @@ public class ConnectionCheckController {
 		return "Success";
 	}
 	@RequestMapping("/checkConnectionDB")
-	public String checkConnectionDB() {
-		this.business.checkConnection();
+	public String checkConnectionDB(String url, String userName, String password) {
+		this.business.checkConnection(url,userName,password);
 		return "DB Success";
 	}
 }
