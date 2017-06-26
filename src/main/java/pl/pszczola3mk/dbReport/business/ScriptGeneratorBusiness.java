@@ -68,15 +68,6 @@ public class ScriptGeneratorBusiness {
 
 			}
 		}
-		/*ClassPath cp = ClassPath.from(Thread.currentThread().getContextClassLoader());
-		ImmutableSet<ClassPath.ClassInfo> topLevelClassesRecursive = cp.getTopLevelClassesRecursive(pack1);
-		for (ClassPath.ClassInfo info : topLevelClassesRecursive) {
-			cfg.addAnnotatedClass(Class.forName(info.getName()));
-		}
-		topLevelClassesRecursive = cp.getTopLevelClassesRecursive(pack2);
-		for (ClassPath.ClassInfo info : topLevelClassesRecursive) {
-			cfg.addAnnotatedClass(Class.forName(info.getName()));
-		} */
 		Thread.currentThread().setContextClassLoader(cl);
 		cfg.buildMappings();
 		Iterator<PersistentClass> classMappings = cfg.getClassMappings();
