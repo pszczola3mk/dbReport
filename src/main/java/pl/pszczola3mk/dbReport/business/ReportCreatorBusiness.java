@@ -6,7 +6,6 @@ import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
@@ -14,6 +13,7 @@ import java.util.Date;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -38,7 +38,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import pl.pszczola3mk.dbReport.model.User;
 import pl.pszczola3mk.dbReport.service.ReportCreatorDBService;
 
 @Component
@@ -52,17 +51,15 @@ public class ReportCreatorBusiness {
 		this.service.checkConnection(url, userName, password);
 	}
 
-	public void executeSql(String sql, User user) {
-		List<ResultSet> rsList = this.service.executeSql(sql, user.getUrl().getValue(), user.getUserName().getValue(), user.getPassword().getValue());
-		for (ResultSet rs : rsList) {
-
-		}
+	public List<Map<String, Object>> executeSql(String sql, String url, String userName, String password) throws SQLException {
+		List<Map<String, Object>> result = this.service.executeSql(sql, url, userName, password);
+		return result;
 	}
 
-	public String translateFromHqlToSql(String hqlQueryText, Path jarPath, String componentName, User user) throws Exception {
+	public String translateFromHqlToSql(String hqlQueryText, Path jarPath, String componentName, String url, String userName, String password) throws Exception {
 		//
 		Configuration cfg = new Configuration();
-		URLClassLoader cl = getHibernateConfig(jarPath, componentName, user, cfg);
+		URLClassLoader cl = getHibernateConfig(jarPath, componentName, url, userName, password, cfg);
 		Thread.currentThread().setContextClassLoader(cl);
 		//
 		String result = "";
@@ -83,12 +80,12 @@ public class ReportCreatorBusiness {
 		return result;
 	}
 
-	public String generateScript(Path jarPath, String componentName, User user) throws Exception {
+	public String generateScript(Path jarPath, String componentName, String url, String userName, String password) throws Exception {
 		//
 		Dialect dialect = new PostgreSQL82Dialect();
-		Connection connection = DriverManager.getConnection("jdbc:postgresql://" + user.getUrl().getValue(), user.getUserName().getValue(), user.getPassword().getValue());
+		Connection connection = DriverManager.getConnection("jdbc:postgresql://" + url, userName, password);
 		Configuration cfg = new Configuration();
-		URLClassLoader cl = getHibernateConfig(jarPath, componentName, user, cfg);
+		URLClassLoader cl = getHibernateConfig(jarPath, componentName, url, userName, password, cfg);
 		Thread.currentThread().setContextClassLoader(cl);
 		//
 		cfg.buildMappings();
@@ -105,11 +102,12 @@ public class ReportCreatorBusiness {
 		return result;
 	}
 
-	private URLClassLoader getHibernateConfig(Path jarPath, String componentName, User user, Configuration cfg) throws ClassNotFoundException, SQLException, IOException {
+	private URLClassLoader getHibernateConfig(Path jarPath, String componentName, String url, String userName, String password, Configuration cfg)
+			throws ClassNotFoundException, SQLException, IOException {
 		Properties prop = new Properties();
-		prop.put("hibernate.connection.url", "jdbc:postgresql://" + user.getUrl().getValue());
-		prop.put("hibernate.connection.username", user.getUserName().getValue());
-		prop.put("hibernate.connection.password", user.getPassword().getValue());
+		prop.put("hibernate.connection.url", "jdbc:postgresql://" + url);
+		prop.put("hibernate.connection.username", userName);
+		prop.put("hibernate.connection.password", password);
 		prop.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQL82Dialect");
 		prop.put("hibernate.connection.driver_class", "org.postgresql.Driver");
 		cfg.setProperties(prop);
@@ -120,7 +118,7 @@ public class ReportCreatorBusiness {
 		String pathToJar = jarPath.toString();
 		JarFile jarFile = new JarFile(pathToJar);
 		Enumeration<JarEntry> e = jarFile.entries();
-		URL[] urls = {new URL("jar:file:" + pathToJar + "!/")};
+		URL[] urls = { new URL("jar:file:" + pathToJar + "!/") };
 		URLClassLoader cl = URLClassLoader.newInstance(urls);
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		while (e.hasMoreElements()) {
@@ -138,6 +136,4 @@ public class ReportCreatorBusiness {
 		}
 		return cl;
 	}
-
-
 }

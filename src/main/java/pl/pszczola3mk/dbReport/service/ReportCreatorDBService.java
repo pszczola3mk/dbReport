@@ -1,8 +1,8 @@
 package pl.pszczola3mk.dbReport.service;
 
-import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,16 +27,16 @@ public class ReportCreatorDBService {
 		log.info("checkConnection - stop");
 	}
 
-	public List<ResultSet> executeSql(String sql, String url, String userName, String password) {
+	public List<Map<String, Object>> executeSql(String sql, String url, String userName, String password) {
 		org.apache.tomcat.jdbc.pool.DataSource dataSource = (org.apache.tomcat.jdbc.pool.DataSource) template.getDataSource();
 		dataSource.setPassword(password);
 		dataSource.setUrl("jdbc:postgresql://" + url);
 		dataSource.setUsername(userName);
 		dataSource.close();
 		log.info("executeSql - start: " + sql);
-		List<ResultSet> result = new ArrayList<>();
-		template.query(sql, (rs, rowNum) -> result.add(rs));
+		List<List<String>> result = new ArrayList<>();
+		List<Map<String, Object>> map = template.queryForList(sql);
 		log.info("executeSql - stop");
-		return result;
+		return map;
 	}
 }
