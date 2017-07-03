@@ -9,22 +9,22 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.vaadin.server.VaadinRequest;
 import com.vaadin.spring.annotation.SpringUI;
-import com.vaadin.ui.Accordion;
 import com.vaadin.ui.Button;
 import com.vaadin.ui.FormLayout;
 import com.vaadin.ui.Grid;
 import com.vaadin.ui.Label;
 import com.vaadin.ui.Notification;
+import com.vaadin.ui.TabSheet;
 import com.vaadin.ui.TextArea;
 import com.vaadin.ui.TextField;
 import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
 import io.vavr.control.Try;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 
 @SpringUI(path = "/ui/dbConnection")
@@ -55,12 +55,12 @@ public class DbConnectionPage extends UI {
 
 	@Override
 	protected void init(VaadinRequest vaadinRequest) {
-		Accordion accordion = new Accordion();
-		accordion.addTab(getConnectionTabForm(), "Connection check");
-		accordion.addTab(getGenerationTabForm(), "Script generation");
-		accordion.addTab(getHqlToSqlTabForm(), "HQL to SQL translate");
-		accordion.addTab(getExecuteSqlForm(), "Execute SQL");
-		setContent(accordion);
+		TabSheet tabsheet = new TabSheet();
+		tabsheet.addTab(getConnectionTabForm(), "Connection check");
+		tabsheet.addTab(getGenerationTabForm(), "Script generation");
+		tabsheet.addTab(getHqlToSqlTabForm(), "HQL to SQL translate");
+		tabsheet.addTab(getExecuteSqlForm(), "Execute SQL");
+		setContent(tabsheet);
 	}
 
 	private FormLayout getExecuteSqlForm() {
@@ -90,7 +90,7 @@ public class DbConnectionPage extends UI {
 		form.addComponent(this.lbDateOfTranslate);
 		//
 		Button btTranslate = new Button("Translate HQL to SQL");
-		btTranslate.addClickListener(clickEvent -> translateHqlToSql(new Object[] { clickEvent }));
+		btTranslate.addClickListener(clickEvent -> translateHqlToSql(clickEvent));
 		form.addComponent(btTranslate);
 		//
 		return form;
@@ -108,7 +108,7 @@ public class DbConnectionPage extends UI {
 		form.addComponent(this.lbDateOfGeneration);
 		//
 		Button buttonCompare = new Button("Compare jar with db");
-		buttonCompare.addClickListener(clickEvent -> compareJarWithDb(new Object[] { clickEvent }));
+		buttonCompare.addClickListener(clickEvent -> compareJarWithDb(clickEvent));
 		form.addComponent(buttonCompare);
 		return form;
 	}
@@ -156,13 +156,15 @@ public class DbConnectionPage extends UI {
 		this.gridSqlResult.setItems(sqlResult);
 		this.gridSqlResult.setHeight(800, Unit.PIXELS);
 		this.gridSqlResult.setWidth(1600, Unit.PIXELS);
+		this.gridSqlResult.removeAllColumns();
 		for (String col : sqlResult.get(0).keySet()) {
 			this.gridSqlResult.addColumn(m -> m.get(col)).setCaption(col);
 		}
+		this.gridSqlResult.getDataProvider().refreshAll();
 		return true;
 	}
 
-	private void translateHqlToSql(Object[] args) {
+	private void translateHqlToSql(Button.ClickEvent clickEvent) {
 		boolean exists = Files.exists(uploadedJarPath);
 		if (exists) {
 			try {
@@ -178,7 +180,7 @@ public class DbConnectionPage extends UI {
 		}
 	}
 
-	private void compareJarWithDb(Object[] args) {
+	private void compareJarWithDb(Button.ClickEvent clickEvent) {
 		boolean exists = Files.exists(uploadedJarPath);
 		if (exists) {
 			try {
