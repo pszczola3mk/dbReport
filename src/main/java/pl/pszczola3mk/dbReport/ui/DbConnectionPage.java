@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,9 @@ public class DbConnectionPage extends UI {
 	private static final Logger log = LoggerFactory.getLogger(DbConnectionPage.class);
 	@Autowired
 	private ReportCreatorBusiness business;
-	private Path uploadedJarPath;
+	private List<Path> uploadedJarPathList = new ArrayList<>();
+	private List<String> uploadedFileNameList = new ArrayList<>();
+	private Path uploadedLastFile;
 	private String uploadedFileName;
 	private String lastGeneratedScript;
 	private String lastSqlScript;
@@ -43,6 +46,7 @@ public class DbConnectionPage extends UI {
 	private TextField tfUrl;
 	private TextField tfComponent;
 	private Label lbDateOfUpload;
+	private Label lbFileList;
 	//
 	private TextArea taScript;
 	private Label lbDateOfGeneration;
@@ -140,10 +144,27 @@ public class DbConnectionPage extends UI {
 		this.lbDateOfUpload = new Label("Date of upload:");
 		form.addComponent(this.lbDateOfUpload);
 		//
+		this.lbFileList = new Label("File list:");
+		form.addComponent(this.lbFileList);
+		//
+		Button btClearFileList = new Button("Clear file list");
+		btClearFileList.addClickListener(clickEvent -> Try.of(this::clearFileList).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		form.addComponent(btClearFileList);
+		//
 		Button btCheckConnection = new Button("Check db connection");
 		btCheckConnection.addClickListener(clickEvent -> Try.of(this::checkConnection).andThen(this::showSuccess).recover(ex -> showError(ex)));
 		form.addComponent(btCheckConnection);
 		return form;
+	}
+
+	private boolean clearFileList() {
+		this.uploadedJarPathList.clear();
+		this.uploadedFileNameList.clear();
+		this.uploadedLastFile=null;
+		this.uploadedFileName=null;
+		this.lbDateOfUpload = new Label("Date of upload:");
+		this.lbFileList = new Label("File list:");
+		return true;
 	}
 
 	private boolean checkConnection() {
@@ -165,34 +186,28 @@ public class DbConnectionPage extends UI {
 	}
 
 	private void translateHqlToSql(Button.ClickEvent clickEvent) {
-		boolean exists = Files.exists(uploadedJarPath);
-		if (exists) {
-			try {
-				this.lastSqlScript = this.business.translateFromHqlToSql(this.tfHqlScript.getValue(), this.uploadedJarPath, this.tfComponent.getValue(), this.tfUrl.getValue(),
-						this.tfUserName.getValue(), this.tfPassword.getValue());
-				this.tfSqlScript.setValue(lastSqlScript);
-				//
-				this.lbDateOfTranslate.setValue("Date of translate:" + getCurrentDateTime());
-				Notification.show("Translate finished", Notification.Type.WARNING_MESSAGE);
-			} catch (Exception ex) {
-				Notification.show("Error during translate generation: " + ex.getMessage(), Notification.Type.ERROR_MESSAGE);
-			}
+		try {
+			this.lastSqlScript = this.business.translateFromHqlToSql(this.tfHqlScript.getValue(), this.uploadedJarPathList, this.tfComponent.getValue(), this.tfUrl.getValue(),
+					this.tfUserName.getValue(), this.tfPassword.getValue());
+			this.tfSqlScript.setValue(lastSqlScript);
+			//
+			this.lbDateOfTranslate.setValue("Date of translate:" + getCurrentDateTime());
+			Notification.show("Translate finished", Notification.Type.WARNING_MESSAGE);
+		} catch (Exception ex) {
+			Notification.show("Error during translate generation: " + ex.getMessage(), Notification.Type.ERROR_MESSAGE);
 		}
 	}
 
 	private void compareJarWithDb(Button.ClickEvent clickEvent) {
-		boolean exists = Files.exists(uploadedJarPath);
-		if (exists) {
-			try {
-				this.lastGeneratedScript = this.business.generateScript(this.uploadedJarPath, this.tfComponent.getValue(), this.tfUrl.getValue(), this.tfUserName.getValue(),
-						this.tfPassword.getValue());
-				this.taScript.setValue(this.lastGeneratedScript);
-				//
-				this.lbDateOfGeneration.setValue("Date of generation:" + getCurrentDateTime());
-				Notification.show("Compare finished", Notification.Type.WARNING_MESSAGE);
-			} catch (Exception ex) {
-				Notification.show("Error during script generation: " + ex.getMessage(), Notification.Type.ERROR_MESSAGE);
-			}
+		try {
+			this.lastGeneratedScript = this.business.generateScript(this.uploadedJarPathList, this.tfComponent.getValue(), this.tfUrl.getValue(), this.tfUserName.getValue(),
+					this.tfPassword.getValue());
+			this.taScript.setValue(this.lastGeneratedScript);
+			//
+			this.lbDateOfGeneration.setValue("Date of generation:" + getCurrentDateTime());
+			Notification.show("Compare finished", Notification.Type.WARNING_MESSAGE);
+		} catch (Exception ex) {
+			Notification.show("Error during script generation: " + ex.getMessage(), Notification.Type.ERROR_MESSAGE);
 		}
 	}
 
@@ -202,18 +217,25 @@ public class DbConnectionPage extends UI {
 	}
 
 	private void sucessUpload(Object[] args) {
-		boolean exists = Files.exists(uploadedJarPath);
+		boolean exists = Files.exists(uploadedLastFile);
 		if (exists) {
+			String label = "File list: ";
+			for (String fn : uploadedFileNameList) {
+				label = label + " " + fn + "; ";
+			}
+			this.lbFileList.setValue(label);
 			Notification.show("File exists", Notification.Type.WARNING_MESSAGE);
-			this.lbDateOfUpload.setValue("Date of upload:" + getCurrentDateTime() + ", file: " + this.uploadedFileName);
+			this.lbDateOfUpload.setValue("Date of last upload:" + getCurrentDateTime() + ", file: " + this.uploadedFileName);
 		}
 	}
 
 	private OutputStream receiveUpload(String[] fileData) {
 		try {
 			this.uploadedFileName = fileData[0];
-			this.uploadedJarPath = Files.createTempFile("scriptGenerator", "tmpjar");
-			return new FileOutputStream(this.uploadedJarPath.toFile());
+			this.uploadedFileNameList.add(uploadedFileName);
+			uploadedLastFile = Files.createTempFile("scriptGenerator", "tmpjar");
+			uploadedJarPathList.add(uploadedLastFile);
+			return new FileOutputStream(uploadedLastFile.toFile());
 		} catch (Exception ex) {
 			Notification.show("Error during upload: " + ex.getMessage(), Notification.Type.ERROR_MESSAGE);
 			return null;

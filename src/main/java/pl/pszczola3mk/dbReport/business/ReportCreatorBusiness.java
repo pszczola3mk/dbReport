@@ -1,6 +1,7 @@
 package pl.pszczola3mk.dbReport.business;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.dialect.Dialect;
@@ -38,6 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
 import pl.pszczola3mk.dbReport.service.ReportCreatorDBService;
 
 @Component
@@ -56,11 +59,10 @@ public class ReportCreatorBusiness {
 		return result;
 	}
 
-	public String translateFromHqlToSql(String hqlQueryText, Path jarPath, String componentName, String url, String userName, String password) throws Exception {
+	public String translateFromHqlToSql(String hqlQueryText, List<Path> jarPath, String componentName, String url, String userName, String password) throws Exception {
 		//
 		Configuration cfg = new Configuration();
-		URLClassLoader cl = getHibernateConfig(jarPath, componentName, url, userName, password, cfg);
-		Thread.currentThread().setContextClassLoader(cl);
+		getHibernateConfig(jarPath, componentName, url, userName, password, cfg);
 		//
 		String result = "";
 		ServiceRegistryBuilder registry = new ServiceRegistryBuilder();
@@ -80,13 +82,12 @@ public class ReportCreatorBusiness {
 		return result;
 	}
 
-	public String generateScript(Path jarPath, String componentName, String url, String userName, String password) throws Exception {
+	public String generateScript(List<Path> jarPath, String componentName, String url, String userName, String password) throws Exception {
 		//
 		Dialect dialect = new PostgreSQL82Dialect();
 		Connection connection = DriverManager.getConnection("jdbc:postgresql://" + url, userName, password);
 		Configuration cfg = new Configuration();
-		URLClassLoader cl = getHibernateConfig(jarPath, componentName, url, userName, password, cfg);
-		Thread.currentThread().setContextClassLoader(cl);
+		getHibernateConfig(jarPath, componentName, url, userName, password, cfg);
 		//
 		cfg.buildMappings();
 		Iterator<PersistentClass> classMappings = cfg.getClassMappings();
@@ -102,8 +103,8 @@ public class ReportCreatorBusiness {
 		return result;
 	}
 
-	private URLClassLoader getHibernateConfig(Path jarPath, String componentName, String url, String userName, String password, Configuration cfg)
-			throws ClassNotFoundException, SQLException, IOException {
+	private void getHibernateConfig(List<Path> jarPath, String componentName, String url, String userName, String password, Configuration cfg)
+			throws ClassNotFoundException, SQLException, IOException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 		Properties prop = new Properties();
 		prop.put("hibernate.connection.url", "jdbc:postgresql://" + url);
 		prop.put("hibernate.connection.username", userName);
@@ -115,25 +116,49 @@ public class ReportCreatorBusiness {
 		log.info("Component: " + componentName);
 		String pack1 = "pg.cui.components." + componentName + ".dataAccessModel";
 		String pack2 = "pg.cui.components." + componentName + ".dataAccessModelReadOnly";
-		String pathToJar = jarPath.toString();
-		JarFile jarFile = new JarFile(pathToJar);
-		Enumeration<JarEntry> e = jarFile.entries();
-		URL[] urls = { new URL("jar:file:" + pathToJar + "!/") };
-		URLClassLoader cl = URLClassLoader.newInstance(urls);
-		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-		while (e.hasMoreElements()) {
-			JarEntry je = e.nextElement();
-			if (je.isDirectory() || !je.getName().endsWith(".class")) {
-				continue;
+
+		/*URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
+		Class clazz = URLClassLoader.class;
+		// Use reflection
+		Method method = clazz.getDeclaredMethod("addURL", new Class[]{URL.class});
+		method.setAccessible(true);
+		Object[] o = jarPath.stream().map(j -> {
+			try {
+				return new File(j.toString()).toURL();
+			} catch (MalformedURLException e1) {
+				log.error("URL read error", e1);
+				return null;
 			}
-			// -6 because of .class
-			String className = je.getName().substring(0, je.getName().length() - 6);
-			className = className.replace('/', '.');
-			if (className.contains(pack1) || className.contains(pack2)) {
-				Class c = cl.loadClass(className);
-				cfg.addAnnotatedClass(c);
+		}).toArray();
+		method.invoke(classLoader, o); */
+		for (Path path : jarPath) {
+			URL jarUrl = new URL("jar:file:" + path + "!/");
+			URL[] urls = {jarUrl};
+			ClassLoader currentThreadClassLoader = Thread.currentThread().getContextClassLoader();
+			// Add the conf dir to the classpath
+			// Chain the current thread classloader
+			URLClassLoader urlClassLoader = new URLClassLoader(new URL[]{jarUrl}, currentThreadClassLoader);
+			// Replace the thread classloader - assumes
+			// you have permissions to do so
+			Thread.currentThread().setContextClassLoader(urlClassLoader);
+			String pathToJar = path.toString();
+			JarFile jarFile = new JarFile(pathToJar);
+			Enumeration<JarEntry> e = jarFile.entries();
+			while (e.hasMoreElements()) {
+				JarEntry je = e.nextElement();
+				if (je.isDirectory() || !je.getName().endsWith(".class")) {
+					continue;
+				}
+				// -6 because of .class
+				String className = je.getName().substring(0, je.getName().length() - 6);
+				className = className.replace('/', '.');
+				if (className.contains(pack1) || className.contains(pack2)) {
+					Class c = Thread.currentThread().getContextClassLoader().loadClass(className);
+					cfg.addAnnotatedClass(c);
+				}
 			}
 		}
-		return cl;
+
+
 	}
 }
