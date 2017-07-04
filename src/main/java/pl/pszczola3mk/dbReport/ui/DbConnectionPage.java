@@ -120,19 +120,19 @@ public class DbConnectionPage extends UI {
 	private FormLayout getConnectionTabForm() {
 		FormLayout form = new FormLayout();
 		//
-		this.tfUserName = new TextField("User name", "seodbmigrationmanager");
+		this.tfUserName = new TextField("User name", "");
 		this.tfUserName.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfUserName);
 		//
-		this.tfPassword = new TextField("Password", "dbmigration");
+		this.tfPassword = new TextField("Password", "");
 		this.tfPassword.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfPassword);
 		//
-		this.tfUrl = new TextField("Url", "pasat3.dev.pg.gda.pl:5432/seoprod");
+		this.tfUrl = new TextField("Url", "");
 		this.tfUrl.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfUrl);
 		//
-		this.tfComponent = new TextField("Component name", "dictManager");
+		this.tfComponent = new TextField("Component name", "");
 		this.tfComponent.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfComponent);
 		//
