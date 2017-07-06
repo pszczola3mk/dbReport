@@ -162,8 +162,8 @@ public class DbConnectionPage extends UI {
 		this.uploadedFileNameList.clear();
 		this.uploadedLastFile=null;
 		this.uploadedFileName=null;
-		this.lbDateOfUpload = new Label("Date of upload:");
-		this.lbFileList = new Label("File list:");
+		this.lbDateOfUpload.setValue("Date of upload:");
+		this.lbFileList.setValue("File list:");
 		return true;
 	}
 
