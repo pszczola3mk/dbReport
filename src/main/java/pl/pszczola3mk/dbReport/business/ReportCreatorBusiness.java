@@ -72,7 +72,7 @@ public class ReportCreatorBusiness {
 		if (hqlQueryText != null && hqlQueryText.trim().length() > 0) {
 			QueryTranslatorFactory translatorFactory = new ASTQueryTranslatorFactory();
 			SessionFactoryImplementor factory = (SessionFactoryImplementor) sessionFactory;
-			QueryTranslator translator = translatorFactory.createQueryTranslator(hqlQueryText, hqlQueryText, Collections.EMPTY_MAP, factory);
+			QueryTranslator translator = translatorFactory.createQueryTranslator(hqlQueryText, hqlQueryText, Collections.EMPTY_MAP, factory,null);
 			translator.compile(Collections.EMPTY_MAP, false);
 			result = translator.getSQLString();
 			BasicFormatterImpl bfi = new BasicFormatterImpl();
