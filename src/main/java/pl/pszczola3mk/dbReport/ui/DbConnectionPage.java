@@ -10,14 +10,12 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.vaadin.server.VaadinRequest;
 import com.vaadin.spring.annotation.SpringUI;
 import com.vaadin.ui.Button;
 import com.vaadin.ui.FormLayout;
 import com.vaadin.ui.Grid;
+import com.vaadin.ui.HorizontalLayout;
 import com.vaadin.ui.Label;
 import com.vaadin.ui.Notification;
 import com.vaadin.ui.TabSheet;
@@ -26,6 +24,9 @@ import com.vaadin.ui.TextField;
 import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
 import io.vavr.control.Try;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 
 @SpringUI(path = "/ui/dbConnection")
@@ -55,6 +56,14 @@ public class DbConnectionPage extends UI {
 	private TextArea tfSqlScript;
 	private Label lbDateOfTranslate;
 	//
+	private int currentPage = 0;
+	private int pageSize = 10;
+	private int pages = 0;
+	private Label lbRowCount;
+	private int rowCount = 0;
+	private Button btPrev;
+	private Button btNext;
+	private List<List<Map<String, Object>>> parts;
 	private Grid<Map<String, Object>> gridSqlResult = new Grid<>("SQL execution result");
 
 	@Override
@@ -73,6 +82,21 @@ public class DbConnectionPage extends UI {
 		btExecSql.addClickListener(clickEvent -> Try.of(this::executeSql).andThen(this::showSuccess).recover(ex -> showError(ex)));
 		form.addComponent(btExecSql);
 		form.addComponent(this.gridSqlResult);
+		//
+		this.lbRowCount = new Label("Liczba wierszy = 0");
+		form.addComponent(this.lbRowCount);
+		//
+		HorizontalLayout vert = new HorizontalLayout();
+		//
+		btPrev = new Button("<");
+		btPrev.addClickListener(clickEvent -> prevGridPage(clickEvent));
+		vert.addComponent(btPrev);
+		//
+		btNext = new Button(">");
+		btNext.addClickListener(clickEvent -> nextGridPage(clickEvent));
+		vert.addComponent(btNext);
+		//
+		form.addComponent(vert);
 		return form;
 	}
 
@@ -160,8 +184,8 @@ public class DbConnectionPage extends UI {
 	private boolean clearFileList() {
 		this.uploadedJarPathList.clear();
 		this.uploadedFileNameList.clear();
-		this.uploadedLastFile=null;
-		this.uploadedFileName=null;
+		this.uploadedLastFile = null;
+		this.uploadedFileName = null;
 		this.lbDateOfUpload.setValue("Date of upload:");
 		this.lbFileList.setValue("File list:");
 		return true;
@@ -174,8 +198,12 @@ public class DbConnectionPage extends UI {
 
 	private boolean executeSql() throws SQLException {
 		List<Map<String, Object>> sqlResult = this.business.executeSql(this.tfSqlScript.getValue(), this.tfUrl.getValue(), this.tfUserName.getValue(), this.tfPassword.getValue());
-		this.gridSqlResult.setItems(sqlResult);
-		this.gridSqlResult.setHeight(800, Unit.PIXELS);
+		this.currentPage = 0;
+		this.rowCount = sqlResult.size();
+		this.parts = this.splitList(sqlResult, this.pageSize);
+		this.lbRowCount.setValue("Liczba wierszy: " + rowCount + " strona 1 z " + this.parts.size());
+		this.gridSqlResult.setItems(parts.get(0));
+		this.gridSqlResult.setHeight(500, Unit.PIXELS);
 		this.gridSqlResult.setWidth(1600, Unit.PIXELS);
 		this.gridSqlResult.removeAllColumns();
 		for (String col : sqlResult.get(0).keySet()) {
@@ -183,6 +211,26 @@ public class DbConnectionPage extends UI {
 		}
 		this.gridSqlResult.getDataProvider().refreshAll();
 		return true;
+	}
+
+	private void nextGridPage(Button.ClickEvent clickEvent) {
+		if ((currentPage + 1) == this.parts.size()) {
+			return;
+		}
+		this.currentPage = this.currentPage + 1;
+		this.lbRowCount.setValue("Liczba wierszy: " + this.rowCount + " strona " + (this.currentPage + 1) + " z " + this.parts.size());
+		this.gridSqlResult.setItems(parts.get(this.currentPage));
+		this.gridSqlResult.getDataProvider().refreshAll();
+	}
+
+	private void prevGridPage(Button.ClickEvent clickEvent) {
+		if (currentPage == 0) {
+			return;
+		}
+		this.currentPage = this.currentPage - 1;
+		this.lbRowCount.setValue("Liczba wierszy: " + this.rowCount + " strona " + (this.currentPage + 1) + " z " + this.parts.size());
+		this.gridSqlResult.setItems(parts.get(this.currentPage));
+		this.gridSqlResult.getDataProvider().refreshAll();
 	}
 
 	private void translateHqlToSql(Button.ClickEvent clickEvent) {
@@ -250,5 +298,14 @@ public class DbConnectionPage extends UI {
 	private boolean showSuccess() {
 		Notification.show("Success", Notification.Type.WARNING_MESSAGE);
 		return true;
+	}
+
+	public <T> List<List<T>> splitList(List<T> list, final int partSize) {
+		List<List<T>> parts = new ArrayList<List<T>>();
+		final int N = list.size();
+		for (int i = 0; i < N; i += partSize) {
+			parts.add(new ArrayList<T>(list.subList(i, Math.min(N, i + partSize))));
+		}
+		return parts;
 	}
 }
