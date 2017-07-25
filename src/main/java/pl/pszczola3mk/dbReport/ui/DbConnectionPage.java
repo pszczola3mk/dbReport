@@ -1,6 +1,7 @@
 package pl.pszczola3mk.dbReport.ui;
 
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,11 +11,20 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
+import com.vaadin.data.HasValue;
 import com.vaadin.server.VaadinRequest;
 import com.vaadin.spring.annotation.SpringUI;
 import com.vaadin.ui.Button;
+import com.vaadin.ui.ComboBox;
 import com.vaadin.ui.FormLayout;
 import com.vaadin.ui.Grid;
+import com.vaadin.ui.GridLayout;
 import com.vaadin.ui.HorizontalLayout;
 import com.vaadin.ui.Label;
 import com.vaadin.ui.Notification;
@@ -23,11 +33,11 @@ import com.vaadin.ui.TextArea;
 import com.vaadin.ui.TextField;
 import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
+import com.vaadin.ui.VerticalLayout;
+
 import io.vavr.control.Try;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
+import pl.pszczola3mk.dbReport.model.Entity;
 
 @SpringUI(path = "/ui/dbConnection")
 public class DbConnectionPage extends UI {
@@ -55,6 +65,9 @@ public class DbConnectionPage extends UI {
 	private TextArea tfHqlScript;
 	private TextArea tfSqlScript;
 	private Label lbDateOfTranslate;
+	private List<Entity> entiesList = new ArrayList<>();
+	private ComboBox<Entity> cbEntites = new ComboBox<>("Select entity", this.entiesList);
+	private VerticalLayout vlColumnsList = new VerticalLayout();
 	//
 	private int currentPage = 0;
 	private int pageSize = 10;
@@ -65,6 +78,13 @@ public class DbConnectionPage extends UI {
 	private Button btNext;
 	private List<List<Map<String, Object>>> parts;
 	private Grid<Map<String, Object>> gridSqlResult = new Grid<>("SQL execution result");
+	//
+	@Value("${pszczola.datasource.username}")
+	private String defaultUserName;
+	@Value("${pszczola.datasource.password}")
+	private String defaultPassword;
+	@Value("${pszczola.datasource.url}")
+	private String defaultUrl;
 
 	@Override
 	protected void init(VaadinRequest vaadinRequest) {
@@ -100,28 +120,66 @@ public class DbConnectionPage extends UI {
 		return form;
 	}
 
-	private FormLayout getHqlToSqlTabForm() {
-		FormLayout form = new FormLayout();
+	private GridLayout getHqlToSqlTabForm() {
+		GridLayout grid = new GridLayout(2, 1);
+		//
+		VerticalLayout vlHqlAndSql = new VerticalLayout();
+		VerticalLayout vlEntitesAndColumns = new VerticalLayout();
+		grid.addComponent(vlHqlAndSql);
+		grid.addComponent(vlEntitesAndColumns);
+		//vlHqlAndSql
 		this.tfHqlScript = new TextArea("HQL script", "select a from AddressTypeEntity a");
 		this.tfHqlScript.setWordWrap(false);
 		this.tfHqlScript.setWidth("800px");
 		this.tfHqlScript.setHeight("400px");
-		form.addComponent(this.tfHqlScript);
-		//
+		vlHqlAndSql.addComponent(tfHqlScript);
 		this.tfSqlScript = new TextArea("SQL script");
 		this.tfSqlScript.setWordWrap(false);
 		this.tfSqlScript.setWidth("800px");
 		this.tfSqlScript.setHeight("400px");
-		form.addComponent(this.tfSqlScript);
+		vlHqlAndSql.addComponent(this.tfSqlScript);
 		//
 		this.lbDateOfTranslate = new Label("Date of translate:");
-		form.addComponent(this.lbDateOfTranslate);
+		vlHqlAndSql.addComponent(this.lbDateOfTranslate);
 		//
 		Button btTranslate = new Button("Translate HQL to SQL");
 		btTranslate.addClickListener(clickEvent -> translateHqlToSql(clickEvent));
-		form.addComponent(btTranslate);
+		vlHqlAndSql.addComponent(btTranslate);
 		//
-		return form;
+		// vlEntitesAndColumns
+		//
+		Button btRefresh = new Button("Refresh entites");
+		btRefresh.addClickListener(clickEvent -> Try.of(this::refreshEntites).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		vlEntitesAndColumns.addComponent(btRefresh);
+		//
+		HorizontalLayout hlEntitesAndColumns = new HorizontalLayout();
+		vlEntitesAndColumns.addComponent(hlEntitesAndColumns);
+		this.cbEntites.setPlaceholder("No entity selected... ");
+		this.cbEntites.setItemCaptionGenerator(Entity::getName);
+		this.cbEntites.setEmptySelectionAllowed(false);
+		this.cbEntites.setWidth(400, Unit.PIXELS);
+		this.cbEntites.addValueChangeListener(event -> refreshColumns(event));
+		hlEntitesAndColumns.addComponent(this.cbEntites);
+		this.vlColumnsList.setCaption("Column list");
+		hlEntitesAndColumns.addComponent(this.vlColumnsList);
+		//
+		return grid;
+	}
+
+	private void refreshColumns(HasValue.ValueChangeEvent<Entity> event) {
+		String value = this.tfHqlScript.getValue();
+		this.tfHqlScript.setValue(value + " " + event.getValue().getName());
+		this.vlColumnsList.removeAllComponents();
+		for (String s : event.getValue().getColumns()) {
+			this.vlColumnsList.addComponent(new Label(s));
+		}
+	}
+
+	private boolean refreshEntites() throws IOException, ClassNotFoundException {
+		this.entiesList.clear();
+		this.entiesList.addAll(this.business.searchEntites(this.uploadedJarPathList, this.tfComponent.getValue()));
+		this.cbEntites.setItems(this.entiesList);
+		return true;
 	}
 
 	private FormLayout getGenerationTabForm() {
@@ -144,19 +202,19 @@ public class DbConnectionPage extends UI {
 	private FormLayout getConnectionTabForm() {
 		FormLayout form = new FormLayout();
 		//
-		this.tfUserName = new TextField("User name", "");
+		this.tfUserName = new TextField("User name", this.defaultUserName);
 		this.tfUserName.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfUserName);
 		//
-		this.tfPassword = new TextField("Password", "");
+		this.tfPassword = new TextField("Password", this.defaultPassword);
 		this.tfPassword.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfPassword);
 		//
-		this.tfUrl = new TextField("Url", "");
+		this.tfUrl = new TextField("Url", this.defaultUrl);
 		this.tfUrl.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfUrl);
 		//
-		this.tfComponent = new TextField("Component name", "");
+		this.tfComponent = new TextField("Component name", "scienceManager");
 		this.tfComponent.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfComponent);
 		//

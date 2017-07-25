@@ -2,6 +2,7 @@ package pl.pszczola3mk.dbReport.business;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
@@ -9,6 +10,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Enumeration;
@@ -18,7 +20,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.dialect.Dialect;
@@ -40,7 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
+import pl.pszczola3mk.dbReport.model.Entity;
 import pl.pszczola3mk.dbReport.service.ReportCreatorDBService;
 
 @Component
@@ -72,7 +73,7 @@ public class ReportCreatorBusiness {
 		if (hqlQueryText != null && hqlQueryText.trim().length() > 0) {
 			QueryTranslatorFactory translatorFactory = new ASTQueryTranslatorFactory();
 			SessionFactoryImplementor factory = (SessionFactoryImplementor) sessionFactory;
-			QueryTranslator translator = translatorFactory.createQueryTranslator(hqlQueryText, hqlQueryText, Collections.EMPTY_MAP, factory,null);
+			QueryTranslator translator = translatorFactory.createQueryTranslator(hqlQueryText, hqlQueryText, Collections.EMPTY_MAP, factory, null);
 			translator.compile(Collections.EMPTY_MAP, false);
 			result = translator.getSQLString();
 			BasicFormatterImpl bfi = new BasicFormatterImpl();
@@ -116,7 +117,6 @@ public class ReportCreatorBusiness {
 		log.info("Component: " + componentName);
 		String pack1 = "pg.cui.components." + componentName + ".dataAccessModel";
 		String pack2 = "pg.cui.components." + componentName + ".dataAccessModelReadOnly";
-
 		/*URLClassLoader classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
 		Class clazz = URLClassLoader.class;
 		// Use reflection
@@ -133,11 +133,11 @@ public class ReportCreatorBusiness {
 		method.invoke(classLoader, o); */
 		for (Path path : jarPath) {
 			URL jarUrl = new URL("jar:file:" + path + "!/");
-			URL[] urls = {jarUrl};
+			URL[] urls = { jarUrl };
 			ClassLoader currentThreadClassLoader = Thread.currentThread().getContextClassLoader();
 			// Add the conf dir to the classpath
 			// Chain the current thread classloader
-			URLClassLoader urlClassLoader = new URLClassLoader(new URL[]{jarUrl}, currentThreadClassLoader);
+			URLClassLoader urlClassLoader = new URLClassLoader(new URL[] { jarUrl }, currentThreadClassLoader);
 			// Replace the thread classloader - assumes
 			// you have permissions to do so
 			Thread.currentThread().setContextClassLoader(urlClassLoader);
@@ -158,7 +158,47 @@ public class ReportCreatorBusiness {
 				}
 			}
 		}
+	}
 
-
+	public List<Entity> searchEntites(List<Path> jarPath, String componentName) throws IOException, ClassNotFoundException {
+		List<Entity> result = new ArrayList<>();
+		String pack1 = "pg.cui.components." + componentName + ".dataAccessModel";
+		String pack2 = "pg.cui.components." + componentName + ".dataAccessModelReadOnly";
+		for (Path path : jarPath) {
+			URL jarUrl = new URL("jar:file:" + path + "!/");
+			URL[] urls = { jarUrl };
+			ClassLoader currentThreadClassLoader = Thread.currentThread().getContextClassLoader();
+			URLClassLoader urlClassLoader = new URLClassLoader(new URL[] { jarUrl }, currentThreadClassLoader);
+			Thread.currentThread().setContextClassLoader(urlClassLoader);
+			String pathToJar = path.toString();
+			JarFile jarFile = new JarFile(pathToJar);
+			Enumeration<JarEntry> e = jarFile.entries();
+			while (e.hasMoreElements()) {
+				JarEntry je = e.nextElement();
+				if (je.isDirectory() || !je.getName().endsWith(".class")) {
+					continue;
+				}
+				// -6 because of .class
+				String className = je.getName().substring(0, je.getName().length() - 6);
+				className = className.replace('/', '.');
+				if (className.contains(pack1) || className.contains(pack2)) {
+					Class c = Thread.currentThread().getContextClassLoader().loadClass(className);
+					if (c.getAnnotation(javax.persistence.Entity.class) != null) {
+						Entity en = new Entity();
+						en.setName(c.getSimpleName());
+						Method[] methods = c.getMethods();
+						for (Method method : methods) {
+							if (method.getName().startsWith("get")) {
+								en.getColumns().add(method.getName().substring(3).substring(0, 1).toLowerCase() + method.getName().substring(3).substring(1));
+							}
+						}
+						Collections.sort(en.getColumns());
+						result.add(en);
+					}
+				}
+			}
+		}
+		Collections.sort(result, (e1, e2) -> e1.getName().compareTo(e2.getName()));
+		return result;
 	}
 }
