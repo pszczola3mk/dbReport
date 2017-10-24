@@ -11,12 +11,10 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-
 import com.vaadin.data.HasValue;
 import com.vaadin.server.VaadinRequest;
 import com.vaadin.spring.annotation.SpringUI;
@@ -34,10 +32,11 @@ import com.vaadin.ui.TextField;
 import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
 import com.vaadin.ui.VerticalLayout;
-
 import io.vavr.control.Try;
+import pl.pszczola3mk.dbReport.business.LogAnalyzeBusiness;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 import pl.pszczola3mk.dbReport.model.Entity;
+import pl.pszczola3mk.dbReport.model.LogsMethod;
 
 @SpringUI(path = "/ui/dbConnection")
 public class DbConnectionPage extends UI {
@@ -45,6 +44,8 @@ public class DbConnectionPage extends UI {
 	private static final Logger log = LoggerFactory.getLogger(DbConnectionPage.class);
 	@Autowired
 	private ReportCreatorBusiness business;
+	@Autowired
+	private LogAnalyzeBusiness logAnalyzeBusiness;
 	private List<Path> uploadedJarPathList = new ArrayList<>();
 	private List<String> uploadedFileNameList = new ArrayList<>();
 	private Path uploadedLastFile;
@@ -58,6 +59,12 @@ public class DbConnectionPage extends UI {
 	private TextField tfComponent;
 	private Label lbDateOfUpload;
 	private Label lbFileList;
+	//
+	//
+	private TextField tfSshUserName;
+	private TextField tfSshPassword;
+	private TextField tfSshHost;
+	private TextField tfSshFile;
 	//
 	private TextArea taScript;
 	private Label lbDateOfGeneration;
@@ -79,6 +86,8 @@ public class DbConnectionPage extends UI {
 	private List<List<Map<String, Object>>> parts;
 	private Grid<Map<String, Object>> gridSqlResult = new Grid<>("SQL execution result");
 	//
+	private Grid<LogsMethod> gridLogsResult = new Grid<>("Logs");
+	//
 	@Value("${pszczola.datasource.username}")
 	private String defaultUserName;
 	@Value("${pszczola.datasource.password}")
@@ -93,7 +102,30 @@ public class DbConnectionPage extends UI {
 		tabsheet.addTab(getGenerationTabForm(), "Script generation");
 		tabsheet.addTab(getHqlToSqlTabForm(), "HQL to SQL translate");
 		tabsheet.addTab(getExecuteSqlForm(), "Execute SQL");
+		tabsheet.addTab(getLogsForm(), "Logs");
 		setContent(tabsheet);
+	}
+
+	private FormLayout getLogsForm() {
+		FormLayout form = new FormLayout();
+		//
+		this.tfSshUserName = new TextField("Ssh user name", "");
+		form.addComponent(this.tfSshUserName);
+		//
+		this.tfSshPassword = new TextField("Ssh password", "");
+		form.addComponent(this.tfSshPassword);
+		//
+		this.tfSshHost = new TextField("Ssh server", "");
+		form.addComponent(this.tfSshHost);
+		//
+		this.tfSshFile = new TextField("Ssh log file path", "");
+		form.addComponent(this.tfSshFile);
+		//
+		Button btExecSsh = new Button("Analyze Log file");
+		btExecSsh.addClickListener(clickEvent -> Try.of(this::downloadSshFile).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		form.addComponent(btExecSsh);
+		form.addComponent(this.gridLogsResult);
+		return form;
 	}
 
 	private FormLayout getExecuteSqlForm() {
@@ -251,6 +283,22 @@ public class DbConnectionPage extends UI {
 
 	private boolean checkConnection() {
 		business.checkConnection(this.tfUrl.getValue(), this.tfUserName.getValue(), this.tfPassword.getValue());
+		return true;
+	}
+
+	private boolean downloadSshFile() throws Exception {
+		List<LogsMethod> logsMethod = this.logAnalyzeBusiness.logAnalyze(this.tfSshUserName.getValue(), this.tfSshPassword.getValue(), this.tfSshHost.getValue(), this.tfSshFile.getValue());
+		this.gridLogsResult.setItems(logsMethod);
+		this.gridLogsResult.setHeight(500, Unit.PIXELS);
+		this.gridLogsResult.setWidth(1600, Unit.PIXELS);
+		this.gridLogsResult.removeAllColumns();
+		this.gridLogsResult.addColumn(LogsMethod::getMethodName).setCaption("Name");
+		this.gridLogsResult.addColumn(LogsMethod::getAvgDuration).setCaption("Avg");
+		this.gridLogsResult.addColumn(LogsMethod::getInvokeCount).setCaption("Count");
+		this.gridLogsResult.addColumn(LogsMethod::getMaxDuration).setCaption("Max");
+		this.gridLogsResult.addColumn(LogsMethod::getMinDuration).setCaption("Min");
+		this.gridLogsResult.addColumn(LogsMethod::getSummaryTime).setCaption("Sum");
+		this.gridSqlResult.getDataProvider().refreshAll();
 		return true;
 	}
 
