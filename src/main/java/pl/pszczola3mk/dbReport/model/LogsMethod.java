@@ -10,14 +10,16 @@ public class LogsMethod implements Serializable {
 
 	private static final long serialVersionUID = -2336629737993396472L;
 
-	public LogsMethod(String methodName, int durationInMilis) {
+	public LogsMethod(String methodName, int durationInMilis, String beanName) {
 		this.methodName = methodName;
 		this.maxDuration = durationInMilis;
 		this.avgDuration = durationInMilis;
 		this.minDuration = durationInMilis;
 		this.invokeCount = 1;
 		this.summaryTime = durationInMilis;
+		this.beanName = beanName;
 	}
+	private String beanName;
 	private String methodName;
 	private int maxDuration;
 	private double avgDuration;

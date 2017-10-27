@@ -11,10 +11,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import com.vaadin.data.HasValue;
 import com.vaadin.server.VaadinRequest;
 import com.vaadin.spring.annotation.SpringUI;
@@ -33,6 +29,10 @@ import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
 import com.vaadin.ui.VerticalLayout;
 import io.vavr.control.Try;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import pl.pszczola3mk.dbReport.business.LogAnalyzeBusiness;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 import pl.pszczola3mk.dbReport.model.Entity;
@@ -121,8 +121,12 @@ public class DbConnectionPage extends UI {
 		this.tfSshFile = new TextField("Ssh log file path", "");
 		form.addComponent(this.tfSshFile);
 		//
+		Button btDownloadSsh = new Button("Download Log file");
+		btDownloadSsh.addClickListener(clickEvent -> Try.of(() -> downloadSshFile(true)).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		form.addComponent(btDownloadSsh);
+
 		Button btExecSsh = new Button("Analyze Log file");
-		btExecSsh.addClickListener(clickEvent -> Try.of(this::downloadSshFile).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		btExecSsh.addClickListener(clickEvent -> Try.of(() -> downloadSshFile(false)).andThen(this::showSuccess).recover(ex -> showError(ex)));
 		form.addComponent(btExecSsh);
 		form.addComponent(this.gridLogsResult);
 		return form;
@@ -250,9 +254,9 @@ public class DbConnectionPage extends UI {
 		this.tfComponent.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfComponent);
 		//
-		Upload upload = new Upload("Component JAR", (fileName, miemType) -> receiveUpload(new String[] { fileName, miemType }));
+		Upload upload = new Upload("Component JAR", (fileName, miemType) -> receiveUpload(new String[]{fileName, miemType}));
 		upload.setImmediateMode(false);
-		upload.addSucceededListener(succeededEvent -> sucessUpload(new Object[] { succeededEvent }));
+		upload.addSucceededListener(succeededEvent -> sucessUpload(new Object[]{succeededEvent}));
 		form.addComponent(upload);
 		//
 		this.lbDateOfUpload = new Label("Date of upload:");
@@ -286,20 +290,43 @@ public class DbConnectionPage extends UI {
 		return true;
 	}
 
-	private boolean downloadSshFile() throws Exception {
-		List<LogsMethod> logsMethod = this.logAnalyzeBusiness.logAnalyze(this.tfSshUserName.getValue(), this.tfSshPassword.getValue(), this.tfSshHost.getValue(), this.tfSshFile.getValue());
+	private boolean downloadSshFile(boolean refresh) throws Exception {
+		List<LogsMethod> logsMethod = this.logAnalyzeBusiness.logAnalyze(null, this.tfSshUserName.getValue(), this.tfSshPassword.getValue(), this.tfSshHost.getValue(), this.tfSshFile.getValue(),
+				refresh);
 		this.gridLogsResult.setItems(logsMethod);
 		this.gridLogsResult.setHeight(500, Unit.PIXELS);
 		this.gridLogsResult.setWidth(1600, Unit.PIXELS);
 		this.gridLogsResult.removeAllColumns();
-		this.gridLogsResult.addColumn(LogsMethod::getMethodName).setCaption("Name");
+		this.gridLogsResult.addColumn(LogsMethod::getBeanName).setCaption("Name");
 		this.gridLogsResult.addColumn(LogsMethod::getAvgDuration).setCaption("Avg");
 		this.gridLogsResult.addColumn(LogsMethod::getInvokeCount).setCaption("Count");
 		this.gridLogsResult.addColumn(LogsMethod::getMaxDuration).setCaption("Max");
 		this.gridLogsResult.addColumn(LogsMethod::getMinDuration).setCaption("Min");
 		this.gridLogsResult.addColumn(LogsMethod::getSummaryTime).setCaption("Sum");
-		this.gridSqlResult.getDataProvider().refreshAll();
+		this.gridLogsResult.getDataProvider().refreshAll();
+		this.gridLogsResult.addItemClickListener(clickEvent -> showDataForBean(clickEvent));
 		return true;
+	}
+
+	private void showDataForBean(Grid.ItemClick<LogsMethod> clickEvent) {
+		try {
+			String beanName = clickEvent.getItem().getBeanName();
+			List<LogsMethod> logsMethod = this.logAnalyzeBusiness
+					.logAnalyze(beanName, this.tfSshUserName.getValue(), this.tfSshPassword.getValue(), this.tfSshHost.getValue(), this.tfSshFile.getValue(), false);
+			this.gridLogsResult.setItems(logsMethod);
+			this.gridLogsResult.setHeight(500, Unit.PIXELS);
+			this.gridLogsResult.setWidth(1600, Unit.PIXELS);
+			this.gridLogsResult.removeAllColumns();
+			this.gridLogsResult.addColumn(LogsMethod::getMethodName).setCaption("Name");
+			this.gridLogsResult.addColumn(LogsMethod::getAvgDuration).setCaption("Avg");
+			this.gridLogsResult.addColumn(LogsMethod::getInvokeCount).setCaption("Count");
+			this.gridLogsResult.addColumn(LogsMethod::getMaxDuration).setCaption("Max");
+			this.gridLogsResult.addColumn(LogsMethod::getMinDuration).setCaption("Min");
+			this.gridLogsResult.addColumn(LogsMethod::getSummaryTime).setCaption("Sum");
+			this.gridLogsResult.getDataProvider().refreshAll();
+		} catch (Exception e) {
+			showError(e);
+		}
 	}
 
 	private boolean executeSql() throws SQLException {

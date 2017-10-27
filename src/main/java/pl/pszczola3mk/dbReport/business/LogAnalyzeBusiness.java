@@ -5,7 +5,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -13,71 +12,80 @@ import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.stream.Collectors;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-
 import com.jcraft.jsch.Channel;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 import pl.pszczola3mk.dbReport.model.LogsMethod;
 
 @Component
 public class LogAnalyzeBusiness {
 
 	private static final Logger log = LoggerFactory.getLogger(LogAnalyzeBusiness.class);
+	private Path path = null;
+	private Map<String, LogsMethod> methods = new HashMap<>();
+	private Map<String, LogsMethod> beans = new HashMap<>();
 
-	public List<LogsMethod> logAnalyze(String userName, String password, String host, String filePath) throws Exception {
-		//Path path = uploadFileAnalyze(userName, password, host, filePath);
-		Path path = FileSystems.getDefault().getPath("/home/pszczola/PG/tmp", "testlog.tmp");
-		FileInputStream inputStream = null;
-		Scanner sc = null;
-		Map<String, LogsMethod> methods = new HashMap<>();
-		Map<String, LogsMethod> beans = new HashMap<>();
-		inputStream = new FileInputStream(path.toFile());
-		sc = new Scanner(inputStream, "UTF-8");
-		while (sc.hasNextLine()) {
-			String line = sc.nextLine();
-			if (line.contains(" STOP ")) {
-				//log.info("STOP " + context.getMethod().getName() + ": " + (diff / (1000 * 1000)) + "ms " + (diff / (1000 * 1000 * 1000)) + "s " + " list size: " + size);
-				String[] split = line.split(" STOP ")[1].split(" ");
-				String beanName = line.split("STOP")[0].split("INFO")[1].trim().split(" ")[0].trim().replace("[", "").replace("]", "");
-				String name = split[0].replace(":", "");
-				Integer timeInMilis = Integer.parseInt(split[1].replace("ms", ""));
-				LogsMethod logsMethod = methods.get(name);
-				if (logsMethod == null) {
-					logsMethod = new LogsMethod(name, timeInMilis);
-					methods.put(name, logsMethod);
-				} else {
-					logsMethod.increase(timeInMilis);
-				}
-				LogsMethod beanMethod = beans.get(beanName);
-				if (beanMethod == null) {
-					beanMethod = new LogsMethod(beanName, timeInMilis);
-					beans.put(beanName, beanMethod);
-				} else {
-					beanMethod.increase(timeInMilis);
+	public List<LogsMethod> logAnalyze(String beanNameArg, String userName, String password, String host, String filePath, boolean withRefresh) throws Exception {
+		String line = null;
+		if (withRefresh || this.path == null) {
+			this.path = uploadFileAnalyze(userName, password, host, filePath);
+			//this.path = FileSystems.getDefault().getPath("/home/pszczola/PG/tmp", "testlog.tmp");
+			FileInputStream inputStream = null;
+			Scanner sc = null;
+			inputStream = new FileInputStream(this.path.toFile());
+			sc = new Scanner(inputStream, "UTF-8");
+			while (sc.hasNextLine()) {
+				try {
+					line = sc.nextLine();
+					if (line.contains(" STOP ")) {
+						//log.info("STOP " + context.getMethod().getName() + ": " + (diff / (1000 * 1000)) + "ms " + (diff / (1000 * 1000 * 1000)) + "s " + " list size: " + size);
+						String[] split = line.split(" STOP ")[1].split(" ");
+						String beanName = line.split("STOP")[0].split("INFO")[1].trim().split(" ")[0].trim().replace("[", "").replace("]", "");
+						String name = split[0].replace(":", "");
+						Integer timeInMilis = Integer.parseInt(split[1].replace("ms", ""));
+						LogsMethod logsMethod = this.methods.get(name);
+						if (logsMethod == null) {
+							logsMethod = new LogsMethod(name, timeInMilis, beanName);
+							this.methods.put(name, logsMethod);
+						} else {
+							logsMethod.increase(timeInMilis);
+						}
+						LogsMethod beanMethod = this.beans.get(beanName);
+						if (beanMethod == null) {
+							beanMethod = new LogsMethod(null, timeInMilis, beanName);
+							this.beans.put(beanName, beanMethod);
+						} else {
+							beanMethod.increase(timeInMilis);
+						}
+					}
+				} catch (Exception e) {
+					log.error("Error w przetwarzaniu linii: " + line);
 				}
 			}
+			if (inputStream != null) {
+				inputStream.close();
+			}
+			if (sc != null) {
+				sc.close();
+			}
 		}
-		if (inputStream != null) {
-			inputStream.close();
-		}
-		if (sc != null) {
-			sc.close();
-		}
-		for (String s : methods.keySet()) {
-			LogsMethod logsMethod = methods.get(s);
+		/*for (String s : this.methods.keySet()) {
+			LogsMethod logsMethod = this.methods.get(s);
 			log.info(logsMethod.toString());
 		}
-		for (String s : beans.keySet()) {
-			LogsMethod logsMethod = beans.get(s);
+		for (String s : this.beans.keySet()) {
+			LogsMethod logsMethod = this.beans.get(s);
 			log.info(logsMethod.toString());
+		} */
+		if (beanNameArg != null) {
+			return this.methods.values().stream().filter(m -> m.getBeanName().equals(beanNameArg)).collect(Collectors.toList());
+		} else {
+			return this.beans.values().stream().collect(Collectors.toList());
 		}
-		return beans.values().stream().collect(Collectors.toList());
 	}
 
 	private Path uploadFileAnalyze(String userName, String password, String host, String filePath) throws Exception {
