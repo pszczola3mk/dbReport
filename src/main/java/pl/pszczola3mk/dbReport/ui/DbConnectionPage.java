@@ -11,6 +11,24 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import com.vaadin.addon.charts.Chart;
+import com.vaadin.addon.charts.model.ChartType;
+import com.vaadin.addon.charts.model.Configuration;
+import com.vaadin.addon.charts.model.HorizontalAlign;
+import com.vaadin.addon.charts.model.LayoutDirection;
+import com.vaadin.addon.charts.model.Legend;
+import com.vaadin.addon.charts.model.ListSeries;
+import com.vaadin.addon.charts.model.PlotOptionsColumn;
+import com.vaadin.addon.charts.model.Tooltip;
+import com.vaadin.addon.charts.model.VerticalAlign;
+import com.vaadin.addon.charts.model.XAxis;
+import com.vaadin.addon.charts.model.YAxis;
+import com.vaadin.addon.charts.model.style.SolidColor;
 import com.vaadin.data.HasValue;
 import com.vaadin.server.VaadinRequest;
 import com.vaadin.spring.annotation.SpringUI;
@@ -22,6 +40,7 @@ import com.vaadin.ui.GridLayout;
 import com.vaadin.ui.HorizontalLayout;
 import com.vaadin.ui.Label;
 import com.vaadin.ui.Notification;
+import com.vaadin.ui.PasswordField;
 import com.vaadin.ui.TabSheet;
 import com.vaadin.ui.TextArea;
 import com.vaadin.ui.TextField;
@@ -29,13 +48,10 @@ import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
 import com.vaadin.ui.VerticalLayout;
 import io.vavr.control.Try;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import pl.pszczola3mk.dbReport.business.LogAnalyzeBusiness;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 import pl.pszczola3mk.dbReport.model.Entity;
+import pl.pszczola3mk.dbReport.model.FileForCompare;
 import pl.pszczola3mk.dbReport.model.LogsMethod;
 
 @SpringUI(path = "/ui/dbConnection")
@@ -54,7 +70,7 @@ public class DbConnectionPage extends UI {
 	private String lastSqlScript;
 	//
 	private TextField tfUserName;
-	private TextField tfPassword;
+	private PasswordField tfPassword;
 	private TextField tfUrl;
 	private TextField tfComponent;
 	private Label lbDateOfUpload;
@@ -62,9 +78,10 @@ public class DbConnectionPage extends UI {
 	//
 	//
 	private TextField tfSshUserName;
-	private TextField tfSshPassword;
+	private PasswordField tfSshPassword;
 	private TextField tfSshHost;
 	private TextField tfSshFile;
+	private TextField tfSshMethodName;
 	//
 	private TextArea taScript;
 	private Label lbDateOfGeneration;
@@ -87,6 +104,10 @@ public class DbConnectionPage extends UI {
 	private Grid<Map<String, Object>> gridSqlResult = new Grid<>("SQL execution result");
 	//
 	private Grid<LogsMethod> gridLogsResult = new Grid<>("Logs");
+	private List<String> methodsToCompare = new ArrayList<>();
+	private Label lbMethodsForCompare;
+	private FormLayout logsForm;
+	private Chart logsChart;
 	//
 	@Value("${pszczola.datasource.username}")
 	private String defaultUserName;
@@ -107,29 +128,96 @@ public class DbConnectionPage extends UI {
 	}
 
 	private FormLayout getLogsForm() {
-		FormLayout form = new FormLayout();
+		this.logsForm = new FormLayout();
 		//
 		this.tfSshUserName = new TextField("Ssh user name", "");
-		form.addComponent(this.tfSshUserName);
+		this.logsForm.addComponent(this.tfSshUserName);
 		//
-		this.tfSshPassword = new TextField("Ssh password", "");
-		form.addComponent(this.tfSshPassword);
+		this.tfSshPassword = new PasswordField("Ssh password", "");
+		this.logsForm.addComponent(this.tfSshPassword);
 		//
 		this.tfSshHost = new TextField("Ssh server", "");
-		form.addComponent(this.tfSshHost);
+		this.logsForm.addComponent(this.tfSshHost);
 		//
 		this.tfSshFile = new TextField("Ssh log file path", "");
-		form.addComponent(this.tfSshFile);
+		this.logsForm.addComponent(this.tfSshFile);
 		//
+		HorizontalLayout hl = new HorizontalLayout();
 		Button btDownloadSsh = new Button("Download Log file");
 		btDownloadSsh.addClickListener(clickEvent -> Try.of(() -> downloadSshFile(true)).andThen(this::showSuccess).recover(ex -> showError(ex)));
-		form.addComponent(btDownloadSsh);
-
+		hl.addComponent(btDownloadSsh);
 		Button btExecSsh = new Button("Analyze Log file");
 		btExecSsh.addClickListener(clickEvent -> Try.of(() -> downloadSshFile(false)).andThen(this::showSuccess).recover(ex -> showError(ex)));
-		form.addComponent(btExecSsh);
-		form.addComponent(this.gridLogsResult);
-		return form;
+		hl.addComponent(btExecSsh);
+		HorizontalLayout hl2 = new HorizontalLayout();
+		this.tfSshMethodName = new TextField("Method for compare", "");
+		hl2.addComponent(this.tfSshMethodName);
+		Button btAdd = new Button("Add");
+		btAdd.addClickListener(clickEvent -> Try.of(() -> addToCompare()).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		hl2.addComponent(btAdd);
+		this.lbMethodsForCompare = new Label("Methods for compare " + this.methodsToCompare.toString());
+		hl2.addComponent(this.lbMethodsForCompare);
+		this.logsForm.addComponent(hl2);
+		this.logsForm.addComponent(hl);
+		this.logsForm.addComponent(this.gridLogsResult);
+		Button btCompare = new Button("Compare");
+		btCompare.addClickListener(clickEvent -> Try.of(() -> compareFiles()).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		logsForm.addComponent(btCompare);
+		return this.logsForm;
+	}
+
+	private boolean addToCompare() {
+		methodsToCompare.add(this.tfSshMethodName.getValue());
+		this.lbMethodsForCompare.setValue("Methods for compare " + this.methodsToCompare.toString());
+		return true;
+	}
+
+	private boolean compareFiles() {
+		List<FileForCompare> compare = this.logAnalyzeBusiness.compare(this.tfSshMethodName.getValue());
+		if (this.logsChart != null) {
+			this.logsForm.removeComponent(this.logsChart);
+		}
+		this.logsChart = new Chart(ChartType.COLUMN);
+		Configuration conf = this.logsChart.getConfiguration();
+		conf.setTitle("Method stats: " + tfSshMethodName.getValue());
+		XAxis x = new XAxis();
+		List<String> categories = compare.stream().map(c -> c.getFileName()).collect(Collectors.toList());
+		x.setCategories(categories.toArray(new String[] {}));
+		conf.addxAxis(x);
+		YAxis y = new YAxis();
+		y.setMin(0);
+		y.setTitle("Time [ms]");
+		conf.addyAxis(y);
+		//
+		Legend legend = new Legend();
+		legend.setLayout(LayoutDirection.VERTICAL);
+		legend.setBackgroundColor(new SolidColor("#FFFFFF"));
+		legend.setAlign(HorizontalAlign.LEFT);
+		legend.setVerticalAlign(VerticalAlign.TOP);
+		legend.setX(100);
+		legend.setY(70);
+		legend.setFloating(true);
+		legend.setShadow(true);
+		conf.setLegend(legend);
+		Tooltip tooltip = new Tooltip();
+		tooltip.setFormatter("this.x +': '+ this.y +' ms'");
+		conf.setTooltip(tooltip);
+		PlotOptionsColumn plot = new PlotOptionsColumn();
+		plot.setPointPadding(0.2);
+		plot.setBorderWidth(0);
+		Integer[] maxDuration = compare.stream().map(c -> c.getLogsMethod().getMaxDuration()).collect(Collectors.toList()).toArray(new Integer[] {});
+		Integer[] minDuration = compare.stream().map(c -> c.getLogsMethod().getMinDuration()).collect(Collectors.toList()).toArray(new Integer[] {});
+		Long[] summaryTime = compare.stream().map(c -> c.getLogsMethod().getSummaryTime()).collect(Collectors.toList()).toArray(new Long[] {});
+		Integer[] invokeCount = compare.stream().map(c -> c.getLogsMethod().getInvokeCount()).collect(Collectors.toList()).toArray(new Integer[] {});
+		Double[] avgDuration = compare.stream().map(c -> c.getLogsMethod().getAvgDuration()).collect(Collectors.toList()).toArray(new Double[] {});
+		conf.addSeries(new ListSeries("maxDuration", maxDuration));
+		conf.addSeries(new ListSeries("minDuration", minDuration));
+		conf.addSeries(new ListSeries("summaryTime", summaryTime));
+		conf.addSeries(new ListSeries("invokeCount", invokeCount));
+		conf.addSeries(new ListSeries("avgDuration", avgDuration));
+		this.logsChart.drawChart(conf);
+		this.logsForm.addComponent(this.logsChart);
+		return true;
 	}
 
 	private FormLayout getExecuteSqlForm() {
@@ -242,7 +330,7 @@ public class DbConnectionPage extends UI {
 		this.tfUserName.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfUserName);
 		//
-		this.tfPassword = new TextField("Password", this.defaultPassword);
+		this.tfPassword = new PasswordField("Password", this.defaultPassword);
 		this.tfPassword.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfPassword);
 		//
@@ -254,9 +342,9 @@ public class DbConnectionPage extends UI {
 		this.tfComponent.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfComponent);
 		//
-		Upload upload = new Upload("Component JAR", (fileName, miemType) -> receiveUpload(new String[]{fileName, miemType}));
+		Upload upload = new Upload("Component JAR", (fileName, miemType) -> receiveUpload(new String[] { fileName, miemType }));
 		upload.setImmediateMode(false);
-		upload.addSucceededListener(succeededEvent -> sucessUpload(new Object[]{succeededEvent}));
+		upload.addSucceededListener(succeededEvent -> sucessUpload(new Object[] { succeededEvent }));
 		form.addComponent(upload);
 		//
 		this.lbDateOfUpload = new Label("Date of upload:");
@@ -292,11 +380,14 @@ public class DbConnectionPage extends UI {
 
 	private boolean downloadSshFile(boolean refresh) throws Exception {
 		List<LogsMethod> logsMethod = this.logAnalyzeBusiness.logAnalyze(null, this.tfSshUserName.getValue(), this.tfSshPassword.getValue(), this.tfSshHost.getValue(), this.tfSshFile.getValue(),
-				refresh);
+				refresh, this.methodsToCompare);
+		List<Grid.Column<LogsMethod, ?>> columns = this.gridLogsResult.getColumns();
+		for (Grid.Column<LogsMethod, ?> c : columns) {
+			this.gridLogsResult.removeColumn(c);
+		}
 		this.gridLogsResult.setItems(logsMethod);
 		this.gridLogsResult.setHeight(500, Unit.PIXELS);
 		this.gridLogsResult.setWidth(1600, Unit.PIXELS);
-		this.gridLogsResult.removeAllColumns();
 		this.gridLogsResult.addColumn(LogsMethod::getBeanName).setCaption("Name");
 		this.gridLogsResult.addColumn(LogsMethod::getAvgDuration).setCaption("Avg");
 		this.gridLogsResult.addColumn(LogsMethod::getInvokeCount).setCaption("Count");
@@ -311,12 +402,15 @@ public class DbConnectionPage extends UI {
 	private void showDataForBean(Grid.ItemClick<LogsMethod> clickEvent) {
 		try {
 			String beanName = clickEvent.getItem().getBeanName();
-			List<LogsMethod> logsMethod = this.logAnalyzeBusiness
-					.logAnalyze(beanName, this.tfSshUserName.getValue(), this.tfSshPassword.getValue(), this.tfSshHost.getValue(), this.tfSshFile.getValue(), false);
+			List<LogsMethod> logsMethod = this.logAnalyzeBusiness.logAnalyze(beanName, this.tfSshUserName.getValue(), this.tfSshPassword.getValue(), this.tfSshHost.getValue(),
+					this.tfSshFile.getValue(), false, this.methodsToCompare);
+			List<Grid.Column<LogsMethod, ?>> columns = this.gridLogsResult.getColumns();
+			for (Grid.Column<LogsMethod, ?> c : columns) {
+				this.gridLogsResult.removeColumn(c);
+			}
 			this.gridLogsResult.setItems(logsMethod);
 			this.gridLogsResult.setHeight(500, Unit.PIXELS);
 			this.gridLogsResult.setWidth(1600, Unit.PIXELS);
-			this.gridLogsResult.removeAllColumns();
 			this.gridLogsResult.addColumn(LogsMethod::getMethodName).setCaption("Name");
 			this.gridLogsResult.addColumn(LogsMethod::getAvgDuration).setCaption("Avg");
 			this.gridLogsResult.addColumn(LogsMethod::getInvokeCount).setCaption("Count");
@@ -338,7 +432,10 @@ public class DbConnectionPage extends UI {
 		this.gridSqlResult.setItems(parts.get(0));
 		this.gridSqlResult.setHeight(500, Unit.PIXELS);
 		this.gridSqlResult.setWidth(1600, Unit.PIXELS);
-		this.gridSqlResult.removeAllColumns();
+		List<Grid.Column<Map<String, Object>, ?>> columns = this.gridSqlResult.getColumns();
+		for (Grid.Column<Map<String, Object>, ?> c : columns) {
+			this.gridSqlResult.removeColumn(c);
+		}
 		for (String col : sqlResult.get(0).keySet()) {
 			this.gridSqlResult.addColumn(m -> m.get(col)).setCaption(col);
 		}

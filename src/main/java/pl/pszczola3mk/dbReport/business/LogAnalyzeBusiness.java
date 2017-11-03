@@ -1,5 +1,6 @@
 package pl.pszczola3mk.dbReport.business;
 
+import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -7,6 +8,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +22,8 @@ import com.jcraft.jsch.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.tukaani.xz.XZInputStream;
+import pl.pszczola3mk.dbReport.model.FileForCompare;
 import pl.pszczola3mk.dbReport.model.LogsMethod;
 
 @Component
@@ -28,8 +33,19 @@ public class LogAnalyzeBusiness {
 	private Path path = null;
 	private Map<String, LogsMethod> methods = new HashMap<>();
 	private Map<String, LogsMethod> beans = new HashMap<>();
+	private List<FileForCompare> filesForCompare = new ArrayList<>();
 
-	public List<LogsMethod> logAnalyze(String beanNameArg, String userName, String password, String host, String filePath, boolean withRefresh) throws Exception {
+	public List<FileForCompare> compare(String methodName) {
+		List<FileForCompare> files = new ArrayList<>();
+		for (FileForCompare fileForCompare : this.filesForCompare) {
+			if (fileForCompare.getLogsMethod().getMethodName().equals(methodName)) {
+				files.add(fileForCompare);
+			}
+		}
+		return files;
+	}
+
+	public List<LogsMethod> logAnalyze(String beanNameArg, String userName, String password, String host, String filePath, boolean withRefresh, List<String> methodsNamesForCompare) throws Exception {
 		String line = null;
 		if (withRefresh || this.path == null) {
 			this.path = uploadFileAnalyze(userName, password, host, filePath);
@@ -73,14 +89,17 @@ public class LogAnalyzeBusiness {
 				sc.close();
 			}
 		}
-		/*for (String s : this.methods.keySet()) {
-			LogsMethod logsMethod = this.methods.get(s);
-			log.info(logsMethod.toString());
+		if (methodsNamesForCompare != null && methodsNamesForCompare.size() > 0) {
+			for (String method : methodsNamesForCompare) {
+				LogsMethod logsMethod = this.methods.get(method);
+				FileForCompare mfc = new FileForCompare();
+				String[] splitPath = filePath.split("/");
+				String orgFileName = splitPath[splitPath.length - 1];
+				mfc.setFileName(orgFileName);
+				mfc.setLogsMethod(logsMethod);
+				this.filesForCompare.add(mfc);
+			}
 		}
-		for (String s : this.beans.keySet()) {
-			LogsMethod logsMethod = this.beans.get(s);
-			log.info(logsMethod.toString());
-		} */
 		if (beanNameArg != null) {
 			return this.methods.values().stream().filter(m -> m.getBeanName().equals(beanNameArg)).collect(Collectors.toList());
 		} else {
@@ -124,8 +143,9 @@ public class LogAnalyzeBusiness {
 						// error
 						break;
 					}
-					if (buf[0] == ' ')
+					if (buf[0] == ' ') {
 						break;
+					}
 					filesize = filesize * 10L + (long) (buf[0] - '0');
 				}
 				String file = null;
@@ -142,14 +162,17 @@ public class LogAnalyzeBusiness {
 				out.write(buf, 0, 1);
 				out.flush();
 				// read a content of lfile
-				uploadedFile = Files.createTempFile("scriptGenerator", "log.tmp");
+				String[] splitPath = filePath.split("/");
+				String orgFileName = splitPath[splitPath.length - 1];
+				uploadedFile = Files.createTempFile("sg" + orgFileName, "log.tmp");
 				fos = new FileOutputStream(uploadedFile.toFile());
 				int foo;
 				while (true) {
-					if (buf.length < filesize)
+					if (buf.length < filesize) {
 						foo = buf.length;
-					else
+					} else {
 						foo = (int) filesize;
+					}
 					foo = in.read(buf, 0, foo);
 					if (foo < 0) {
 						// error
@@ -157,8 +180,9 @@ public class LogAnalyzeBusiness {
 					}
 					fos.write(buf, 0, foo);
 					filesize -= foo;
-					if (filesize == 0L)
+					if (filesize == 0L) {
 						break;
+					}
 				}
 				fos.close();
 				fos = null;
@@ -172,13 +196,38 @@ public class LogAnalyzeBusiness {
 			}
 			session.disconnect();
 			log.info("file: " + uploadedFile.toAbsolutePath());
+			if (filePath.endsWith("xz")) {
+				uploadedFile = Paths.get(extractXz(uploadedFile.toString()));
+			}
 			return uploadedFile;
 		} catch (Exception e) {
 			try {
-				if (fos != null)
+				if (fos != null) {
 					fos.close();
+				}
 			} catch (Exception ee) {
 			}
+			throw e;
+		}
+	}
+
+	private String extractXz(String filePath) throws IOException {
+		try {
+			String decFilepath = filePath + "Dec";
+			FileInputStream fin = new FileInputStream(filePath);
+			BufferedInputStream in = new BufferedInputStream(fin);
+			FileOutputStream out = new FileOutputStream(decFilepath);
+			XZInputStream xzIn = new XZInputStream(in);
+			final byte[] buffer = new byte[8192];
+			int n = 0;
+			while (-1 != (n = xzIn.read(buffer))) {
+				out.write(buffer, 0, n);
+			}
+			out.close();
+			xzIn.close();
+			return decFilepath;
+		} catch (Exception e) {
+			log.error("Decompress error:", e);
 			throw e;
 		}
 	}
@@ -189,10 +238,12 @@ public class LogAnalyzeBusiness {
 		//          1 for error,
 		//          2 for fatal error,
 		//          -1
-		if (b == 0)
+		if (b == 0) {
 			return b;
-		if (b == -1)
+		}
+		if (b == -1) {
 			return b;
+		}
 		if (b == 1 || b == 2) {
 			StringBuffer sb = new StringBuffer();
 			int c;
