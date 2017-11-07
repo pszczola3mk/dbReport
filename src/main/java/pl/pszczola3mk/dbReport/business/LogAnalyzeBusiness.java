@@ -48,6 +48,8 @@ public class LogAnalyzeBusiness {
 	public List<LogsMethod> logAnalyze(String beanNameArg, String userName, String password, String host, String filePath, boolean withRefresh, List<String> methodsNamesForCompare) throws Exception {
 		String line = null;
 		if (withRefresh || this.path == null) {
+			this.methods = new HashMap<>();
+			this.beans = new HashMap<>();
 			this.path = uploadFileAnalyze(userName, password, host, filePath);
 			//this.path = FileSystems.getDefault().getPath("/home/pszczola/PG/tmp", "testlog.tmp");
 			FileInputStream inputStream = null;

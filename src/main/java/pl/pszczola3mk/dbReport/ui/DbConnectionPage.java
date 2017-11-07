@@ -11,24 +11,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import com.vaadin.addon.charts.Chart;
-import com.vaadin.addon.charts.model.ChartType;
-import com.vaadin.addon.charts.model.Configuration;
-import com.vaadin.addon.charts.model.HorizontalAlign;
-import com.vaadin.addon.charts.model.LayoutDirection;
-import com.vaadin.addon.charts.model.Legend;
-import com.vaadin.addon.charts.model.ListSeries;
-import com.vaadin.addon.charts.model.PlotOptionsColumn;
-import com.vaadin.addon.charts.model.Tooltip;
-import com.vaadin.addon.charts.model.VerticalAlign;
-import com.vaadin.addon.charts.model.XAxis;
-import com.vaadin.addon.charts.model.YAxis;
-import com.vaadin.addon.charts.model.style.SolidColor;
 import com.vaadin.data.HasValue;
 import com.vaadin.server.VaadinRequest;
 import com.vaadin.spring.annotation.SpringUI;
@@ -48,6 +30,10 @@ import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
 import com.vaadin.ui.VerticalLayout;
 import io.vavr.control.Try;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import pl.pszczola3mk.dbReport.business.LogAnalyzeBusiness;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 import pl.pszczola3mk.dbReport.model.Entity;
@@ -107,7 +93,7 @@ public class DbConnectionPage extends UI {
 	private List<String> methodsToCompare = new ArrayList<>();
 	private Label lbMethodsForCompare;
 	private FormLayout logsForm;
-	private Chart logsChart;
+	private Grid<FileForCompare> gridLogsCompare = new Grid<>("Logs Compare");
 	//
 	@Value("${pszczola.datasource.username}")
 	private String defaultUserName;
@@ -163,6 +149,7 @@ public class DbConnectionPage extends UI {
 		Button btCompare = new Button("Compare");
 		btCompare.addClickListener(clickEvent -> Try.of(() -> compareFiles()).andThen(this::showSuccess).recover(ex -> showError(ex)));
 		logsForm.addComponent(btCompare);
+		this.logsForm.addComponent(this.gridLogsCompare);
 		return this.logsForm;
 	}
 
@@ -174,49 +161,22 @@ public class DbConnectionPage extends UI {
 
 	private boolean compareFiles() {
 		List<FileForCompare> compare = this.logAnalyzeBusiness.compare(this.tfSshMethodName.getValue());
-		if (this.logsChart != null) {
-			this.logsForm.removeComponent(this.logsChart);
+		List<Grid.Column<FileForCompare, ?>> columns = this.gridLogsCompare.getColumns();
+		for (Grid.Column<FileForCompare, ?> c : columns) {
+			this.gridLogsCompare.removeColumn(c);
 		}
-		this.logsChart = new Chart(ChartType.COLUMN);
-		Configuration conf = this.logsChart.getConfiguration();
-		conf.setTitle("Method stats: " + tfSshMethodName.getValue());
-		XAxis x = new XAxis();
-		List<String> categories = compare.stream().map(c -> c.getFileName()).collect(Collectors.toList());
-		x.setCategories(categories.toArray(new String[] {}));
-		conf.addxAxis(x);
-		YAxis y = new YAxis();
-		y.setMin(0);
-		y.setTitle("Time [ms]");
-		conf.addyAxis(y);
-		//
-		Legend legend = new Legend();
-		legend.setLayout(LayoutDirection.VERTICAL);
-		legend.setBackgroundColor(new SolidColor("#FFFFFF"));
-		legend.setAlign(HorizontalAlign.LEFT);
-		legend.setVerticalAlign(VerticalAlign.TOP);
-		legend.setX(100);
-		legend.setY(70);
-		legend.setFloating(true);
-		legend.setShadow(true);
-		conf.setLegend(legend);
-		Tooltip tooltip = new Tooltip();
-		tooltip.setFormatter("this.x +': '+ this.y +' ms'");
-		conf.setTooltip(tooltip);
-		PlotOptionsColumn plot = new PlotOptionsColumn();
-		plot.setPointPadding(0.2);
-		plot.setBorderWidth(0);
-		Integer[] maxDuration = compare.stream().map(c -> c.getLogsMethod().getMaxDuration()).collect(Collectors.toList()).toArray(new Integer[] {});
-		Integer[] minDuration = compare.stream().map(c -> c.getLogsMethod().getMinDuration()).collect(Collectors.toList()).toArray(new Integer[] {});
-		Long[] summaryTime = compare.stream().map(c -> c.getLogsMethod().getSummaryTime()).collect(Collectors.toList()).toArray(new Long[] {});
-		Integer[] invokeCount = compare.stream().map(c -> c.getLogsMethod().getInvokeCount()).collect(Collectors.toList()).toArray(new Integer[] {});
-		Double[] avgDuration = compare.stream().map(c -> c.getLogsMethod().getAvgDuration()).collect(Collectors.toList()).toArray(new Double[] {});
-		conf.addSeries(new ListSeries("maxDuration", maxDuration));
-		conf.addSeries(new ListSeries("minDuration", minDuration));
-		conf.addSeries(new ListSeries("summaryTime", summaryTime));
-		conf.addSeries(new ListSeries("invokeCount", invokeCount));
-		conf.addSeries(new ListSeries("avgDuration", avgDuration));
-		this.logsChart.drawChart(conf);
-		this.logsForm.addComponent(this.logsChart);
+		this.gridLogsCompare.setItems(compare);
+		this.gridLogsCompare.setHeight(500, Unit.PIXELS);
+		this.gridLogsCompare.setWidth(1600, Unit.PIXELS);
+		this.gridLogsCompare.addColumn(FileForCompare::getFileName).setCaption("FileName");
+		this.gridLogsCompare.addColumn(FileForCompare::getMethodName).setCaption("Name");
+		this.gridLogsCompare.addColumn(FileForCompare::getBeanName).setCaption("BeanName");
+		this.gridLogsCompare.addColumn(FileForCompare::getAvgDuration).setCaption("Avg");
+		this.gridLogsCompare.addColumn(FileForCompare::getInvokeCount).setCaption("Count");
+		this.gridLogsCompare.addColumn(FileForCompare::getMaxDuration).setCaption("Max");
+		this.gridLogsCompare.addColumn(FileForCompare::getMinDuration).setCaption("Min");
+		this.gridLogsCompare.addColumn(FileForCompare::getSummaryTime).setCaption("Sum");
+		this.gridLogsCompare.getDataProvider().refreshAll();
 		return true;
 	}
 
