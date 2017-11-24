@@ -39,6 +39,7 @@ import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 import pl.pszczola3mk.dbReport.model.Entity;
 import pl.pszczola3mk.dbReport.model.FileForCompare;
 import pl.pszczola3mk.dbReport.model.LogsMethod;
+import pl.pszczola3mk.dbReport.model.MethodInvoke;
 
 @SpringUI(path = "/ui/dbConnection")
 public class DbConnectionPage extends UI {
@@ -68,6 +69,7 @@ public class DbConnectionPage extends UI {
 	private TextField tfSshHost;
 	private TextField tfSshFile;
 	private TextField tfSshMethodName;
+	private TextField tfPersonNumber;
 	//
 	private TextArea taScript;
 	private Label lbDateOfGeneration;
@@ -92,8 +94,10 @@ public class DbConnectionPage extends UI {
 	private Grid<LogsMethod> gridLogsResult = new Grid<>("Logs");
 	private List<String> methodsToCompare = new ArrayList<>();
 	private Label lbMethodsForCompare;
-	private FormLayout logsForm;
+	private VerticalLayout logsForm;
 	private Grid<FileForCompare> gridLogsCompare = new Grid<>("Logs Compare");
+	private Grid<LogsMethod> gridTrackPersonSummary = new Grid<>("Track Summary");
+	private Grid<MethodInvoke> gridTrackPerson = new Grid<>("Track");
 	//
 	@Value("${pszczola.datasource.username}")
 	private String defaultUserName;
@@ -113,20 +117,22 @@ public class DbConnectionPage extends UI {
 		setContent(tabsheet);
 	}
 
-	private FormLayout getLogsForm() {
-		this.logsForm = new FormLayout();
+	private VerticalLayout getLogsForm() {
+		this.logsForm = new VerticalLayout();
+		HorizontalLayout hlUser = new HorizontalLayout();
+		HorizontalLayout hlServer = new HorizontalLayout();
 		//
 		this.tfSshUserName = new TextField("Ssh user name", "");
-		this.logsForm.addComponent(this.tfSshUserName);
+		hlUser.addComponent(this.tfSshUserName);
 		//
 		this.tfSshPassword = new PasswordField("Ssh password", "");
-		this.logsForm.addComponent(this.tfSshPassword);
+		hlUser.addComponent(this.tfSshPassword);
 		//
 		this.tfSshHost = new TextField("Ssh server", "");
-		this.logsForm.addComponent(this.tfSshHost);
+		hlServer.addComponent(this.tfSshHost);
 		//
 		this.tfSshFile = new TextField("Ssh log file path", "");
-		this.logsForm.addComponent(this.tfSshFile);
+		hlServer.addComponent(this.tfSshFile);
 		//
 		HorizontalLayout hl = new HorizontalLayout();
 		Button btDownloadSsh = new Button("Download Log file");
@@ -135,6 +141,7 @@ public class DbConnectionPage extends UI {
 		Button btExecSsh = new Button("Analyze Log file");
 		btExecSsh.addClickListener(clickEvent -> Try.of(() -> downloadSshFile(false)).andThen(this::showSuccess).recover(ex -> showError(ex)));
 		hl.addComponent(btExecSsh);
+		//
 		HorizontalLayout hl2 = new HorizontalLayout();
 		this.tfSshMethodName = new TextField("Method for compare", "");
 		hl2.addComponent(this.tfSshMethodName);
@@ -143,13 +150,44 @@ public class DbConnectionPage extends UI {
 		hl2.addComponent(btAdd);
 		this.lbMethodsForCompare = new Label("Methods for compare " + this.methodsToCompare.toString());
 		hl2.addComponent(this.lbMethodsForCompare);
-		this.logsForm.addComponent(hl2);
-		this.logsForm.addComponent(hl);
-		this.logsForm.addComponent(this.gridLogsResult);
 		Button btCompare = new Button("Compare");
 		btCompare.addClickListener(clickEvent -> Try.of(() -> compareFiles()).andThen(this::showSuccess).recover(ex -> showError(ex)));
-		logsForm.addComponent(btCompare);
-		this.logsForm.addComponent(this.gridLogsCompare);
+		hl2.addComponent(btCompare);
+		//
+		HorizontalLayout hl3 = new HorizontalLayout();
+		this.tfPersonNumber = new TextField("Person number", "");
+		hl3.addComponent(this.tfPersonNumber);
+		Button btTrackSummary = new Button("Track Summary");
+		btTrackSummary.addClickListener(clickEvent -> Try.of(() -> trackPersonSummary()).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		hl3.addComponent(btTrackSummary);
+		//
+		Button btTrack = new Button("Track");
+		btTrack.addClickListener(clickEvent -> Try.of(() -> trackPerson()).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		hl3.addComponent(btTrack);
+		//
+		this.logsForm.addComponent(hlUser);
+		this.logsForm.addComponent(hlServer);
+		this.logsForm.addComponent(hl2);
+		this.logsForm.addComponent(hl3);
+		this.logsForm.addComponent(hl);
+		TabSheet tabsheet = new TabSheet();
+		FormLayout fl1 = new FormLayout();
+		fl1.addComponent(this.gridLogsResult);
+		//
+		FormLayout fl2 = new FormLayout();
+		fl2.addComponent(this.gridLogsCompare);
+		//
+		FormLayout fl3 = new FormLayout();
+		fl3.addComponent(this.gridTrackPersonSummary);
+		//
+		FormLayout fl4 = new FormLayout();
+		fl4.addComponent(this.gridTrackPerson);
+
+		tabsheet.addTab(fl1,"Logs stats");
+		tabsheet.addTab(fl2,"Logs compare");
+		tabsheet.addTab(fl3,"Track summary");
+		tabsheet.addTab(fl4,"Person track");
+		this.logsForm.addComponent(tabsheet);
 		return this.logsForm;
 	}
 
@@ -159,12 +197,57 @@ public class DbConnectionPage extends UI {
 		return true;
 	}
 
+	//
+	private boolean trackPersonSummary() {
+		List<LogsMethod> trackPersonInvokes = this.logAnalyzeBusiness.trackPersonInvokes(this.tfPersonNumber.getValue());
+		List<Grid.Column<LogsMethod, ?>> columns = this.gridTrackPersonSummary.getColumns();
+		for (Grid.Column<LogsMethod, ?> c : columns) {
+			this.gridTrackPersonSummary.removeColumn(c);
+		}
+		this.gridTrackPersonSummary.setCaption("Track Summary ["+trackPersonInvokes.size()+"]");
+		this.gridTrackPersonSummary.setItems(trackPersonInvokes);
+		this.gridTrackPersonSummary.setHeight(500, Unit.PIXELS);
+		this.gridTrackPersonSummary.setWidth(1600, Unit.PIXELS);
+		this.gridTrackPersonSummary.addColumn(LogsMethod::getBeanName).setCaption("Bean");
+		this.gridTrackPersonSummary.addColumn(LogsMethod::getMethodName).setCaption("Method");
+		this.gridTrackPersonSummary.addColumn(LogsMethod::getAvgDuration).setCaption("Avg");
+		this.gridTrackPersonSummary.addColumn(LogsMethod::getInvokeCount).setCaption("Count");
+		this.gridTrackPersonSummary.addColumn(LogsMethod::getMaxDuration).setCaption("Max");
+		this.gridTrackPersonSummary.addColumn(LogsMethod::getMinDuration).setCaption("Min");
+		this.gridTrackPersonSummary.addColumn(LogsMethod::getSummaryTime).setCaption("Sum");
+		this.gridTrackPersonSummary.getDataProvider().refreshAll();
+		return true;
+	}
+
+	private boolean trackPerson() {
+		List<LogsMethod> trackPersonInvokes = this.logAnalyzeBusiness.trackPersonInvokes(this.tfPersonNumber.getValue());
+		List<MethodInvoke> miList = new ArrayList<>();
+		for (LogsMethod lm : trackPersonInvokes) {
+			miList.addAll(lm.getInvokeList());
+		}
+		List<Grid.Column<MethodInvoke, ?>> columns = this.gridTrackPerson.getColumns();
+		for (Grid.Column<MethodInvoke, ?> c : columns) {
+			this.gridTrackPerson.removeColumn(c);
+		}
+		this.gridTrackPerson.setCaption("Track ["+miList.size()+"]");
+		this.gridTrackPerson.setItems(miList);
+		this.gridTrackPerson.setHeight(500, Unit.PIXELS);
+		this.gridTrackPerson.setWidth(1600, Unit.PIXELS);
+		this.gridTrackPerson.addColumn(MethodInvoke::getMethodName).setCaption("Method");
+		this.gridTrackPerson.addColumn(MethodInvoke::getDurationInMilis).setCaption("Duration");
+		this.gridTrackPerson.addColumn(MethodInvoke::getInvokeDateFormated).setCaption("InvokeDate");
+		this.gridTrackPerson.getDataProvider().refreshAll();
+		return true;
+	}
+
+
 	private boolean compareFiles() {
 		List<FileForCompare> compare = this.logAnalyzeBusiness.compare(this.tfSshMethodName.getValue());
 		List<Grid.Column<FileForCompare, ?>> columns = this.gridLogsCompare.getColumns();
 		for (Grid.Column<FileForCompare, ?> c : columns) {
 			this.gridLogsCompare.removeColumn(c);
 		}
+		this.gridLogsCompare.setCaption("Logs Compare ["+compare.size()+"]");
 		this.gridLogsCompare.setItems(compare);
 		this.gridLogsCompare.setHeight(500, Unit.PIXELS);
 		this.gridLogsCompare.setWidth(1600, Unit.PIXELS);
@@ -345,6 +428,7 @@ public class DbConnectionPage extends UI {
 		for (Grid.Column<LogsMethod, ?> c : columns) {
 			this.gridLogsResult.removeColumn(c);
 		}
+		this.gridLogsResult.setCaption("Logs ["+logsMethod.size()+"]");
 		this.gridLogsResult.setItems(logsMethod);
 		this.gridLogsResult.setHeight(500, Unit.PIXELS);
 		this.gridLogsResult.setWidth(1600, Unit.PIXELS);
@@ -368,6 +452,7 @@ public class DbConnectionPage extends UI {
 			for (Grid.Column<LogsMethod, ?> c : columns) {
 				this.gridLogsResult.removeColumn(c);
 			}
+			this.gridLogsResult.setCaption("Logs ["+logsMethod.size()+"]");
 			this.gridLogsResult.setItems(logsMethod);
 			this.gridLogsResult.setHeight(500, Unit.PIXELS);
 			this.gridLogsResult.setWidth(1600, Unit.PIXELS);

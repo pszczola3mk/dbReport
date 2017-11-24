@@ -1,6 +1,7 @@
 package pl.pszczola3mk.dbReport.business;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -9,7 +10,9 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +28,7 @@ import org.springframework.stereotype.Component;
 import org.tukaani.xz.XZInputStream;
 import pl.pszczola3mk.dbReport.model.FileForCompare;
 import pl.pszczola3mk.dbReport.model.LogsMethod;
+import pl.pszczola3mk.dbReport.model.MethodInvoke;
 
 @Component
 public class LogAnalyzeBusiness {
@@ -45,13 +49,37 @@ public class LogAnalyzeBusiness {
 		return files;
 	}
 
+	public List<LogsMethod> trackPersonInvokes(String personNumber) {
+		Map<String, LogsMethod> map = new HashMap<>();
+		for (LogsMethod lm : this.methods.values()) {
+			for (MethodInvoke mi : lm.getInvokeList()) {
+				if (mi.getPersonId().equals(personNumber)) {
+					LogsMethod method = map.get(mi.getBeanName() + " " + mi.getMethodName());
+					if (method != null) {
+						method.increase(mi.getDurationInMilis(), mi.getPersonId());
+					} else {
+						method = new LogsMethod(lm.getBeanName(), lm.getMethodName(), mi.getPersonId(), mi.getParams(), mi.getInvokeDate());
+						method.increase(mi.getDurationInMilis(), mi.getPersonId());
+						map.put(mi.getBeanName() + " " + mi.getMethodName(), method);
+					}
+				}
+			}
+		}
+		return map.values().stream().collect(Collectors.toList());
+	}
+
 	public List<LogsMethod> logAnalyze(String beanNameArg, String userName, String password, String host, String filePath, boolean withRefresh, List<String> methodsNamesForCompare) throws Exception {
 		String line = null;
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
 		if (withRefresh || this.path == null) {
 			this.methods = new HashMap<>();
 			this.beans = new HashMap<>();
-			this.path = uploadFileAnalyze(userName, password, host, filePath);
-			//this.path = FileSystems.getDefault().getPath("/home/pszczola/PG/tmp", "testlog.tmp");
+			if (host.equals("local")) {
+				File f = new File(filePath);
+				this.path = f.toPath();
+			} else {
+				this.path = uploadFileAnalyze(userName, password, host, filePath);
+			}
 			FileInputStream inputStream = null;
 			Scanner sc = null;
 			inputStream = new FileInputStream(this.path.toFile());
@@ -60,24 +88,39 @@ public class LogAnalyzeBusiness {
 				try {
 					line = sc.nextLine();
 					if (line.contains(" STOP ")) {
-						//log.info("STOP " + context.getMethod().getName() + ": " + (diff / (1000 * 1000)) + "ms " + (diff / (1000 * 1000 * 1000)) + "s " + " list size: " + size);
+						//log.info("STOP ["+personNumber+"] " + context.getMethod().getName() + " " + (diff / (1000 * 1000)) + "ms " + (diff / (1000 * 1000 * 1000)) + "s " + " list size: " + size);
 						String[] split = line.split(" STOP ")[1].split(" ");
 						String beanName = line.split("STOP")[0].split("INFO")[1].trim().split(" ")[0].trim().replace("[", "").replace("]", "");
-						String name = split[0].replace(":", "");
-						Integer timeInMilis = Integer.parseInt(split[1].replace("ms", ""));
-						LogsMethod logsMethod = this.methods.get(name);
-						if (logsMethod == null) {
-							logsMethod = new LogsMethod(name, timeInMilis, beanName);
-							this.methods.put(name, logsMethod);
-						} else {
-							logsMethod.increase(timeInMilis);
+						String personId = split[0].replace("[", "").replace("]", "");
+						String name = split[1].replace(":", "");
+						Integer timeInMilis = Integer.parseInt(split[2].replace("ms", ""));
+						LogsMethod logsMethod = this.methods.get(beanName + " " + name);
+						if (logsMethod != null) {
+							logsMethod.increase(timeInMilis, personId);
 						}
-						LogsMethod beanMethod = this.beans.get(beanName);
-						if (beanMethod == null) {
-							beanMethod = new LogsMethod(null, timeInMilis, beanName);
-							this.beans.put(beanName, beanMethod);
+						//only for beans stats
+						LogsMethod beansMethod = this.beans.get(beanName);
+						if (beansMethod != null) {
+							beansMethod.increase(timeInMilis, null);
 						} else {
-							beanMethod.increase(timeInMilis);
+							beansMethod = new LogsMethod(beanName, name, null, null, null);
+							beansMethod.increase(timeInMilis, null);
+							this.beans.put(beanName, beansMethod);
+						}
+					}
+					if (line.contains(" START ")) {
+						//log.info("START ["+personNumber+"] " + context.getMethod().getName() + " " + params);
+						//2017-10-30 00:00:04,660 INFO  [pg.cui.components.studentManager.businessObjects.StudentManagerBean] (default task-176) START: searchMyStudentMessage params:
+						String[] split = line.split(" START ")[1].split(" ");
+						String date = line.split("START")[0].split("INFO")[0].trim();
+						Date invokeDate = sdf.parse(date);
+						String beanName = line.split("START")[0].split("INFO")[1].trim().split(" ")[0].trim().replace("[", "").replace("]", "");
+						String personId = split[0].replace("[", "").replace("]", "");
+						String name = split[1].replace(":", "");
+						String params = split[2];
+						LogsMethod beansMethod = this.methods.get(beanName + " " + name);
+						if (beansMethod == null) {
+							this.methods.put(beanName + " " + name, new LogsMethod(beanName, name, personId, params, invokeDate));
 						}
 					}
 				} catch (Exception e) {
