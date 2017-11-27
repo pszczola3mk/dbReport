@@ -143,16 +143,14 @@ public class DbConnectionPage extends UI {
 		hl.addComponent(btExecSsh);
 		//
 		HorizontalLayout hl2 = new HorizontalLayout();
-		this.tfSshMethodName = new TextField("Method for compare", "");
-		hl2.addComponent(this.tfSshMethodName);
-		Button btAdd = new Button("Add");
-		btAdd.addClickListener(clickEvent -> Try.of(() -> addToCompare()).andThen(this::showSuccess).recover(ex -> showError(ex)));
-		hl2.addComponent(btAdd);
 		this.lbMethodsForCompare = new Label("Methods for compare " + this.methodsToCompare.toString());
 		hl2.addComponent(this.lbMethodsForCompare);
 		Button btCompare = new Button("Compare");
 		btCompare.addClickListener(clickEvent -> Try.of(() -> compareFiles()).andThen(this::showSuccess).recover(ex -> showError(ex)));
 		hl2.addComponent(btCompare);
+		Button btCompareClear = new Button("Clear");
+		btCompareClear.addClickListener(clickEvent -> Try.of(() -> clearCompareFiles()).andThen(this::showSuccess).recover(ex -> showError(ex)));
+		hl2.addComponent(btCompareClear);
 		//
 		HorizontalLayout hl3 = new HorizontalLayout();
 		this.tfPersonNumber = new TextField("Person number", "");
@@ -182,19 +180,20 @@ public class DbConnectionPage extends UI {
 		//
 		FormLayout fl4 = new FormLayout();
 		fl4.addComponent(this.gridTrackPerson);
-
-		tabsheet.addTab(fl1,"Logs stats");
-		tabsheet.addTab(fl2,"Logs compare");
-		tabsheet.addTab(fl3,"Track summary");
-		tabsheet.addTab(fl4,"Person track");
+		tabsheet.addTab(fl1, "Logs stats");
+		tabsheet.addTab(fl2, "Logs compare");
+		tabsheet.addTab(fl3, "Track summary");
+		tabsheet.addTab(fl4, "Person track");
 		this.logsForm.addComponent(tabsheet);
 		return this.logsForm;
 	}
 
-	private boolean addToCompare() {
-		methodsToCompare.add(this.tfSshMethodName.getValue());
-		this.lbMethodsForCompare.setValue("Methods for compare " + this.methodsToCompare.toString());
-		return true;
+	private void addToCompare(Grid.ItemClick<LogsMethod> clickEvent) {
+		String beanName = clickEvent.getItem().getBeanName();
+		String methodName = clickEvent.getItem().getMethodName();
+		this.methodsToCompare.clear();
+		this.methodsToCompare.add(methodName);
+		this.lbMethodsForCompare.setValue("Methods for compare " + methodName);
 	}
 
 	//
@@ -204,7 +203,7 @@ public class DbConnectionPage extends UI {
 		for (Grid.Column<LogsMethod, ?> c : columns) {
 			this.gridTrackPersonSummary.removeColumn(c);
 		}
-		this.gridTrackPersonSummary.setCaption("Track Summary ["+trackPersonInvokes.size()+"]");
+		this.gridTrackPersonSummary.setCaption("Track Summary [" + trackPersonInvokes.size() + "]");
 		this.gridTrackPersonSummary.setItems(trackPersonInvokes);
 		this.gridTrackPersonSummary.setHeight(500, Unit.PIXELS);
 		this.gridTrackPersonSummary.setWidth(1600, Unit.PIXELS);
@@ -229,7 +228,7 @@ public class DbConnectionPage extends UI {
 		for (Grid.Column<MethodInvoke, ?> c : columns) {
 			this.gridTrackPerson.removeColumn(c);
 		}
-		this.gridTrackPerson.setCaption("Track ["+miList.size()+"]");
+		this.gridTrackPerson.setCaption("Track [" + miList.size() + "]");
 		this.gridTrackPerson.setItems(miList);
 		this.gridTrackPerson.setHeight(500, Unit.PIXELS);
 		this.gridTrackPerson.setWidth(1600, Unit.PIXELS);
@@ -240,14 +239,20 @@ public class DbConnectionPage extends UI {
 		return true;
 	}
 
+	private boolean clearCompareFiles() {
+		this.tfSshMethodName.setValue(null);
+		methodsToCompare.clear();
+		this.lbMethodsForCompare.setValue("Methods for compare");
+		return true;
+	}
 
 	private boolean compareFiles() {
-		List<FileForCompare> compare = this.logAnalyzeBusiness.compare(this.tfSshMethodName.getValue());
+		List<FileForCompare> compare = this.logAnalyzeBusiness.compare(this.methodsToCompare.get(0));
 		List<Grid.Column<FileForCompare, ?>> columns = this.gridLogsCompare.getColumns();
 		for (Grid.Column<FileForCompare, ?> c : columns) {
 			this.gridLogsCompare.removeColumn(c);
 		}
-		this.gridLogsCompare.setCaption("Logs Compare ["+compare.size()+"]");
+		this.gridLogsCompare.setCaption("Logs Compare [" + compare.size() + "]");
 		this.gridLogsCompare.setItems(compare);
 		this.gridLogsCompare.setHeight(500, Unit.PIXELS);
 		this.gridLogsCompare.setWidth(1600, Unit.PIXELS);
@@ -428,7 +433,7 @@ public class DbConnectionPage extends UI {
 		for (Grid.Column<LogsMethod, ?> c : columns) {
 			this.gridLogsResult.removeColumn(c);
 		}
-		this.gridLogsResult.setCaption("Logs ["+logsMethod.size()+"]");
+		this.gridLogsResult.setCaption("Logs [" + logsMethod.size() + "]");
 		this.gridLogsResult.setItems(logsMethod);
 		this.gridLogsResult.setHeight(500, Unit.PIXELS);
 		this.gridLogsResult.setWidth(1600, Unit.PIXELS);
@@ -452,7 +457,7 @@ public class DbConnectionPage extends UI {
 			for (Grid.Column<LogsMethod, ?> c : columns) {
 				this.gridLogsResult.removeColumn(c);
 			}
-			this.gridLogsResult.setCaption("Logs ["+logsMethod.size()+"]");
+			this.gridLogsResult.setCaption("Logs [" + logsMethod.size() + "]");
 			this.gridLogsResult.setItems(logsMethod);
 			this.gridLogsResult.setHeight(500, Unit.PIXELS);
 			this.gridLogsResult.setWidth(1600, Unit.PIXELS);
@@ -463,6 +468,7 @@ public class DbConnectionPage extends UI {
 			this.gridLogsResult.addColumn(LogsMethod::getMinDuration).setCaption("Min");
 			this.gridLogsResult.addColumn(LogsMethod::getSummaryTime).setCaption("Sum");
 			this.gridLogsResult.getDataProvider().refreshAll();
+			this.gridLogsResult.addItemClickListener(clickEvent2 -> addToCompare(clickEvent2));
 		} catch (Exception e) {
 			showError(e);
 		}

@@ -41,11 +41,8 @@ public class LogAnalyzeBusiness {
 
 	public List<FileForCompare> compare(String methodName) {
 		List<FileForCompare> files = new ArrayList<>();
-		for (FileForCompare fileForCompare : this.filesForCompare) {
-			if (fileForCompare.getLogsMethod().getMethodName().equals(methodName)) {
-				files.add(fileForCompare);
-			}
-		}
+		List<FileForCompare> fileForCompare = this.filesForCompare.stream().filter(f -> f.getMethodName().equals(methodName)).collect(Collectors.toList());
+		files.addAll(fileForCompare);
 		return files;
 	}
 
@@ -134,16 +131,15 @@ public class LogAnalyzeBusiness {
 				sc.close();
 			}
 		}
-		if (methodsNamesForCompare != null && methodsNamesForCompare.size() > 0) {
-			for (String method : methodsNamesForCompare) {
-				LogsMethod logsMethod = this.methods.get(method);
-				FileForCompare mfc = new FileForCompare();
-				String[] splitPath = filePath.split("/");
-				String orgFileName = splitPath[splitPath.length - 1];
-				mfc.setFileName(orgFileName);
-				mfc.setLogsMethod(logsMethod);
-				this.filesForCompare.add(mfc);
-			}
+		String[] splitPath = filePath.split("/");
+		String orgFileName = splitPath[splitPath.length - 1];
+		List<FileForCompare> toRemove = filesForCompare.stream().filter(f -> f.getFileName().equals(orgFileName)).collect(Collectors.toList());
+		this.filesForCompare.removeAll(toRemove);
+		for (LogsMethod lm : this.methods.values()) {
+			FileForCompare mfc = new FileForCompare();
+			mfc.setFileName(orgFileName);
+			mfc.setLogsMethod(lm);
+			this.filesForCompare.add(mfc);
 		}
 		if (beanNameArg != null) {
 			return this.methods.values().stream().filter(m -> m.getBeanName().equals(beanNameArg)).collect(Collectors.toList());
