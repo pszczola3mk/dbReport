@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.tukaani.xz.XZInputStream;
+import pl.pszczola3mk.dbReport.model.ExceptionLog;
 import pl.pszczola3mk.dbReport.model.FileForCompare;
 import pl.pszczola3mk.dbReport.model.LogsMethod;
 import pl.pszczola3mk.dbReport.model.MethodInvoke;
@@ -37,6 +38,7 @@ public class LogAnalyzeBusiness {
 	private Path path = null;
 	private Map<String, LogsMethod> methods = new HashMap<>();
 	private Map<String, LogsMethod> beans = new HashMap<>();
+	private Map<String, ExceptionLog> exceptions = new HashMap<>();
 	private List<FileForCompare> filesForCompare = new ArrayList<>();
 
 	public List<FileForCompare> compare(String methodName) {
@@ -44,6 +46,10 @@ public class LogAnalyzeBusiness {
 		List<FileForCompare> fileForCompare = this.filesForCompare.stream().filter(f -> f.getMethodName().equals(methodName)).collect(Collectors.toList());
 		files.addAll(fileForCompare);
 		return files;
+	}
+
+	public List<ExceptionLog> searchAllExceptions() {
+		return this.exceptions.values().stream().collect(Collectors.toList());
 	}
 
 	public List<LogsMethod> trackPersonInvokes(String personNumber) {
@@ -54,6 +60,7 @@ public class LogAnalyzeBusiness {
 					LogsMethod method = map.get(mi.getBeanName() + " " + mi.getMethodName());
 					if (method != null) {
 						method.increase(mi.getDurationInMilis(), mi.getPersonId());
+						method.addInvoke(mi.getPersonId(), mi.getParams(), mi.getInvokeDate(), mi.getDurationInMilis());
 					} else {
 						method = new LogsMethod(lm.getBeanName(), lm.getMethodName(), mi.getPersonId(), mi.getParams(), mi.getInvokeDate());
 						method.increase(mi.getDurationInMilis(), mi.getPersonId());
@@ -84,6 +91,23 @@ public class LogAnalyzeBusiness {
 			while (sc.hasNextLine()) {
 				try {
 					line = sc.nextLine();
+					if (line.contains("ERROR") || line.contains("WARN")) {
+						String logLevel = line.contains("ERROR") ? " ERROR " : " WARN ";
+						Date invokeDate = sdf.parse(line.split(logLevel)[0].trim());
+						String message = line.split(logLevel)[1];
+						ExceptionLog exceptionLog = null;
+						if (this.exceptions.containsKey(message)) {
+							exceptionLog = this.exceptions.get(message);
+						} else {
+							exceptionLog = new ExceptionLog();
+						}
+						exceptionLog.getInvokeDates().add(invokeDate);
+						exceptionLog.setInvokeCount(exceptionLog.getInvokeCount() + 1);
+						exceptionLog.setLevel(logLevel);
+						exceptionLog.setMessage(message);
+						exceptionLog.setShortMessage(message.substring(0, 100));
+						this.exceptions.put(message, exceptionLog);
+					}
 					if (line.contains(" STOP ")) {
 						//log.info("STOP ["+personNumber+"] " + context.getMethod().getName() + " " + (diff / (1000 * 1000)) + "ms " + (diff / (1000 * 1000 * 1000)) + "s " + " list size: " + size);
 						String[] split = line.split(" STOP ")[1].split(" ");
@@ -118,6 +142,8 @@ public class LogAnalyzeBusiness {
 						LogsMethod beansMethod = this.methods.get(beanName + " " + name);
 						if (beansMethod == null) {
 							this.methods.put(beanName + " " + name, new LogsMethod(beanName, name, personId, params, invokeDate));
+						} else {
+							beansMethod.addInvoke(personId, params, invokeDate);
 						}
 					}
 				} catch (Exception e) {

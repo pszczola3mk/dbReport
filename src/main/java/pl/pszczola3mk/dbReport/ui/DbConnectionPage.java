@@ -11,8 +11,16 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import com.vaadin.ui.Component;
+import org.apache.commons.lang.WordUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import com.vaadin.data.HasValue;
+import com.vaadin.data.provider.ListDataProvider;
 import com.vaadin.server.VaadinRequest;
+import com.vaadin.shared.ui.ContentMode;
 import com.vaadin.spring.annotation.SpringUI;
 import com.vaadin.ui.Button;
 import com.vaadin.ui.ComboBox;
@@ -29,14 +37,14 @@ import com.vaadin.ui.TextField;
 import com.vaadin.ui.UI;
 import com.vaadin.ui.Upload;
 import com.vaadin.ui.VerticalLayout;
+import com.vaadin.ui.Window;
+import com.vaadin.ui.components.grid.HeaderRow;
+import com.vaadin.ui.themes.ValoTheme;
 import io.vavr.control.Try;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import pl.pszczola3mk.dbReport.business.LogAnalyzeBusiness;
 import pl.pszczola3mk.dbReport.business.ReportCreatorBusiness;
 import pl.pszczola3mk.dbReport.model.Entity;
+import pl.pszczola3mk.dbReport.model.ExceptionLog;
 import pl.pszczola3mk.dbReport.model.FileForCompare;
 import pl.pszczola3mk.dbReport.model.LogsMethod;
 import pl.pszczola3mk.dbReport.model.MethodInvoke;
@@ -98,6 +106,9 @@ public class DbConnectionPage extends UI {
 	private Grid<FileForCompare> gridLogsCompare = new Grid<>("Logs Compare");
 	private Grid<LogsMethod> gridTrackPersonSummary = new Grid<>("Track Summary");
 	private Grid<MethodInvoke> gridTrackPerson = new Grid<>("Track");
+	private Grid<ExceptionLog> gridExceptions = new Grid<>("Exceptions");
+	//
+	private TextField tfFilteringMessageField;
 	//
 	@Value("${pszczola.datasource.username}")
 	private String defaultUserName;
@@ -180,12 +191,79 @@ public class DbConnectionPage extends UI {
 		//
 		FormLayout fl4 = new FormLayout();
 		fl4.addComponent(this.gridTrackPerson);
+		//
+		FormLayout fl5 = new FormLayout();
+		fl5.addComponent(createGridEx());
+		//
 		tabsheet.addTab(fl1, "Logs stats");
 		tabsheet.addTab(fl2, "Logs compare");
 		tabsheet.addTab(fl3, "Track summary");
 		tabsheet.addTab(fl4, "Person track");
+		tabsheet.addTab(fl5, "Exceptions");
 		this.logsForm.addComponent(tabsheet);
 		return this.logsForm;
+	}
+
+	private Component createGridEx() {
+		List<Grid.Column<ExceptionLog, ?>> columns = this.gridExceptions.getColumns();
+		for (Grid.Column<ExceptionLog, ?> c : columns) {
+			this.gridExceptions.removeColumn(c);
+		}
+		HeaderRow filterRow = this.gridExceptions.addHeaderRowAt(1);
+		this.gridExceptions.setHeight(500, Unit.PIXELS);
+		this.gridExceptions.setWidth(1600, Unit.PIXELS);
+		this.gridExceptions.addColumn(ExceptionLog::getShortMessage).setCaption("Message").setId("Message");
+		this.gridExceptions.addColumn(ExceptionLog::getInvokeCount).setCaption("Invoke count");
+		this.gridExceptions.addColumn(ExceptionLog::getLevel).setCaption("Level").setId("Level");
+		this.gridExceptions.addColumn(ExceptionLog::getFirstInvokeDate).setCaption("First date");
+		tfFilteringMessageField = getColumnFilterField();
+		filterRow.getCell("Message").setComponent(tfFilteringMessageField);
+		this.gridExceptions.addItemClickListener(clickEvent -> showDataEx(clickEvent));
+		return this.gridExceptions;
+	}
+
+	private boolean showExceptions() {
+		List<ExceptionLog> exLogs = this.logAnalyzeBusiness.searchAllExceptions();
+
+		ListDataProvider<ExceptionLog> dataProvider = new ListDataProvider<>(exLogs);
+		this.gridExceptions.setDataProvider(dataProvider);
+		tfFilteringMessageField.addValueChangeListener(event -> {
+			dataProvider.setFilter(ExceptionLog::getShortMessage, m -> {
+				if (m == null) {
+					return false;
+				}
+				if (m.equals("")) {
+					return true;
+				}
+				String companyLower = m.toLowerCase();
+				String filterLower = event.getValue().toLowerCase();
+				return companyLower.contains(filterLower);
+			});
+		});
+		if (tfFilteringMessageField.getValue() == null || tfFilteringMessageField.getValue().equals("")) {
+			dataProvider.clearFilters();
+		}
+		this.gridExceptions.setCaption("Logs [" + exLogs.size() + "]");
+		this.gridExceptions.getDataProvider().refreshAll();
+		return true;
+	}
+
+	private TextField getColumnFilterField() {
+		TextField filter = new TextField();
+		filter.setWidth("100%");
+		filter.addStyleName(ValoTheme.TEXTFIELD_TINY);
+		filter.setPlaceholder("Filter");
+		return filter;
+	}
+
+	private void showDataEx(Grid.ItemClick<ExceptionLog> clickEvent) {
+		String message = clickEvent.getItem().getMessage();
+		Window window = new Window("Exception message");
+		window.setWidth(800, Unit.PIXELS);
+		String wrap = WordUtils.wrap(message, 100, "<BR/>", false);
+		Label label = new Label(wrap, ContentMode.HTML);
+		window.setContent(label);
+		this.getUI().addWindow(window);
 	}
 
 	private void addToCompare(Grid.ItemClick<LogsMethod> clickEvent) {
@@ -390,9 +468,9 @@ public class DbConnectionPage extends UI {
 		this.tfComponent.setRequiredIndicatorVisible(true);
 		form.addComponent(this.tfComponent);
 		//
-		Upload upload = new Upload("Component JAR", (fileName, miemType) -> receiveUpload(new String[] { fileName, miemType }));
+		Upload upload = new Upload("Component JAR", (fileName, miemType) -> receiveUpload(new String[]{fileName, miemType}));
 		upload.setImmediateMode(false);
-		upload.addSucceededListener(succeededEvent -> sucessUpload(new Object[] { succeededEvent }));
+		upload.addSucceededListener(succeededEvent -> sucessUpload(new Object[]{succeededEvent}));
 		form.addComponent(upload);
 		//
 		this.lbDateOfUpload = new Label("Date of upload:");
@@ -445,6 +523,8 @@ public class DbConnectionPage extends UI {
 		this.gridLogsResult.addColumn(LogsMethod::getSummaryTime).setCaption("Sum");
 		this.gridLogsResult.getDataProvider().refreshAll();
 		this.gridLogsResult.addItemClickListener(clickEvent -> showDataForBean(clickEvent));
+		//
+		this.showExceptions();
 		return true;
 	}
 

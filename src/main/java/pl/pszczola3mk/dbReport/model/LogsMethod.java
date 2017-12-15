@@ -17,7 +17,7 @@ public class LogsMethod implements Serializable {
 		this.methodName = methodName;
 		this.beanName = beanName;
 		if (personId != null) {
-			invokeList.add(new MethodInvoke(beanName, methodName, personId, params, -1,invokeDate));
+			invokeList.add(new MethodInvoke(beanName, methodName, personId, params, -1, invokeDate));
 		}
 	}
 	private String beanName;
@@ -46,6 +46,18 @@ public class LogsMethod implements Serializable {
 		if (personId != null) {
 			this.invokeList.stream().filter(m -> m.getPersonId().equals(personId) && m.getMethodName().equals(this.methodName) && m.getBeanName().equals(this.beanName) && m.getDurationInMilis() == -1)
 					.forEach(m -> m.setDurationInMilis(durationInMilis));
+		}
+	}
+
+	public void addInvoke(String personId, String params, Date invokeDate) {
+		if (personId != null) {
+			invokeList.add(new MethodInvoke(this.beanName, this.methodName, personId, params, -1, invokeDate));
+		}
+	}
+
+	public void addInvoke(String personId, String params, Date invokeDate, int durationInMilis) {
+		if (personId != null) {
+			invokeList.add(new MethodInvoke(this.beanName, this.methodName, personId, params, durationInMilis, invokeDate));
 		}
 	}
 }
